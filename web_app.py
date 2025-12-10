@@ -53,8 +53,10 @@ def index():
 @app.route('/api/portfolio', methods=['GET'])
 def get_portfolio():
     try:
+        user_id = request.headers.get('User-ID', 'anonymous')
+        
         # 1. Get holdings from DB/File
-        holdings = portfolio_service.get_portfolio()
+        holdings = portfolio_service.get_portfolio(user_id)
         if not holdings:
             return jsonify({'overview': {'total_market_value': 0, 'total_pl': 0, 'total_cost': 0, 'day_pl': 0, 'total_pl_pct': 0, 'currency': 'CNY'}, 'holdings': []})
 
@@ -168,6 +170,7 @@ def get_portfolio():
 @app.route('/api/portfolio/add', methods=['POST'])
 def add_portfolio_item():
     try:
+        user_id = request.headers.get('User-ID', 'anonymous')
         data = request.get_json(force=True)
         symbol = data.get('symbol')
         quantity = data.get('quantity')
@@ -176,7 +179,7 @@ def add_portfolio_item():
         if not symbol or quantity is None or cost is None:
             return jsonify({'error': 'Missing fields'}), 400
             
-        result = portfolio_service.add_stock(symbol, quantity, cost)
+        result = portfolio_service.add_stock(user_id, symbol, quantity, cost)
         if result.get('status') == 'error':
              return jsonify({'error': result.get('msg')}), 500
              
@@ -196,8 +199,10 @@ def get_portfolio_analysis():
         import pandas as pd
         import numpy as np
 
+        user_id = request.headers.get('User-ID', 'anonymous')
+
         # 1. Get Holdings
-        holdings = portfolio_service.get_portfolio()
+        holdings = portfolio_service.get_portfolio(user_id)
         if not holdings:
              return jsonify({'error': 'Portfolio is empty'}), 400
 
@@ -324,6 +329,7 @@ def get_portfolio_analysis():
 @app.route('/api/portfolio/remove', methods=['DELETE']) # Or POST if preferred
 def remove_portfolio_item():
     try:
+        user_id = request.headers.get('User-ID', 'anonymous')
         symbol = request.args.get('symbol')
         if not symbol:
              # Try JSON body
@@ -333,7 +339,7 @@ def remove_portfolio_item():
         if not symbol:
              return jsonify({'error': 'Missing symbol'}), 400
 
-        result = portfolio_service.remove_stock(symbol)
+        result = portfolio_service.remove_stock(user_id, symbol)
         if result.get('status') == 'error':
              return jsonify({'error': result.get('msg')}), 500
              

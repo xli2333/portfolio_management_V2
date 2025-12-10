@@ -48,6 +48,7 @@ interface AnalysisData {
 
 interface DashboardProps {
     onNavigate: (symbol: string) => void;
+    userId: string;
 }
 
 function CompanySummary({ symbol }: { symbol: string }) {
@@ -201,7 +202,7 @@ function AnalyticsSection({ data, holdings }: { data: AnalysisData, holdings: Ho
     );
 }
 
-export function Dashboard({ onNavigate }: DashboardProps) {
+export function Dashboard({ onNavigate, userId }: DashboardProps) {
     const [holdings, setHoldings] = useState<Holding[]>([]);
     const [overview, setOverview] = useState<PortfolioOverview | null>(null);
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
@@ -222,7 +223,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const fetchPortfolio = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiBase}/api/portfolio`);
+            const res = await fetch(`${apiBase}/api/portfolio`, {
+                headers: { 'User-ID': userId }
+            });
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             setHoldings(data.holdings || []);
@@ -242,7 +245,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const fetchAnalysis = async () => {
         setAnalysisLoading(true);
         try {
-            const res = await fetch(`${apiBase}/api/portfolio/analysis`);
+            const res = await fetch(`${apiBase}/api/portfolio/analysis`, {
+                headers: { 'User-ID': userId }
+            });
             const data = await res.json();
             if (!data.error) {
                 setAnalysis(data);
@@ -256,7 +261,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
     useEffect(() => {
         fetchPortfolio();
-    }, []);
+    }, [userId]); // Refetch if user changes
 
     const handleAddStock = async () => {
         if (!newSymbol || !newShares || !newCost) {
@@ -268,6 +273,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         try {
             const res = await fetch(`${apiBase}/api/portfolio/add`, {
                 method: 'POST',
+                headers: { 'User-ID': userId },
                 body: JSON.stringify({
                     symbol: newSymbol,
                     quantity: Number(newShares),
@@ -295,7 +301,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         if(!confirm(`确认从组合中移除 ${symbol} 吗？`)) return;
         
         try {
-            const res = await fetch(`${apiBase}/api/portfolio/remove?symbol=${symbol}`, { method: 'DELETE' });
+            const res = await fetch(`${apiBase}/api/portfolio/remove?symbol=${symbol}`, { 
+                method: 'DELETE',
+                headers: { 'User-ID': userId }
+            });
             if (res.ok) fetchPortfolio();
         } catch (err) {
             console.error(err);

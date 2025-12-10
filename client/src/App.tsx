@@ -94,7 +94,7 @@ export default function App() {
         </header>
 
         {view === 'dashboard' ? (
-          <Dashboard onNavigate={navigateToAnalyzer} />
+          <Dashboard onNavigate={navigateToAnalyzer} userId={session.user.id} />
         ) : (
           <Analyzer 
             initialSymbol={selectedSymbol} 

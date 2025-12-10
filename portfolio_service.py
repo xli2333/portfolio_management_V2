@@ -53,11 +53,11 @@ class PortfolioService:
             with open(self.summary_file, 'w', encoding='utf-8') as f:
                 json.dump({}, f)
 
-    def get_portfolio(self):
-        """Retrieve all holdings."""
+    def get_portfolio(self, user_id):
+        """Retrieve all holdings for a specific user."""
         if self.use_supabase:
             try:
-                response = self.supabase.table("holdings").select("*").execute()
+                response = self.supabase.table("holdings").select("*").eq("user_id", user_id).execute()
                 return response.data
             except Exception as e:
                 logger.error(f"Supabase read error: {e}")
@@ -70,10 +70,9 @@ class PortfolioService:
                 logger.error(f"Local file read error: {e}")
                 return []
 
-    def add_stock(self, symbol, quantity, cost_basis):
-        """Add a stock to the portfolio."""
+    def add_stock(self, user_id, symbol, quantity, cost_basis):
+        """Add a stock to the portfolio for a specific user."""
         symbol = symbol.upper()
-        # Create record dict
         # Support fractional shares by using float()
         try:
             # Supabase shares column is bigint (int8), so we must send int, not float (e.g. 100.0 fails)
@@ -82,6 +81,7 @@ class PortfolioService:
             safe_shares = 0
             
         record = {
+            "user_id": user_id,
             "symbol": symbol,
             "shares": safe_shares,
             "cost_basis": float(cost_basis),
@@ -90,10 +90,8 @@ class PortfolioService:
 
         if self.use_supabase:
             try:
-                # Upsert based on symbol? Or just insert? 
-                # For simplicity, let's treat symbol as unique for now, or just insert new rows.
-                # Project design implies a list, but usually we aggregate by symbol.
-                # Let's simple insert for now.
+                # Insert the record directly. Supabase doesn't support "upsert" easily without a primary key constraint
+                # that includes user_id+symbol. For now, we append.
                 self.supabase.table("holdings").insert(record).execute()
                 return {"status": "success", "msg": "Added to Supabase"}
             except Exception as e:
@@ -101,13 +99,10 @@ class PortfolioService:
                 return {"status": "error", "msg": str(e)}
         else:
             try:
-                data = self.get_portfolio()
+                data = self.get_portfolio(user_id) # Local mode ignores user_id effectively
                 # Check if symbol exists, if so, maybe update?
-                # For this MVP, let's just append or update if exists
                 existing = next((item for item in data if item["symbol"] == symbol), None)
                 if existing:
-                    # Update weighted average cost could be complex, let's just overwrite or sum
-                    # Simple logic: Overwrite/Update
                     existing["shares"] = float(quantity)
                     existing["cost_basis"] = float(cost_basis)
                     existing["updated_at"] = datetime.utcnow().isoformat()
@@ -121,18 +116,18 @@ class PortfolioService:
                 logger.error(f"Local file write error: {e}")
                 return {"status": "error", "msg": str(e)}
 
-    def remove_stock(self, symbol):
+    def remove_stock(self, user_id, symbol):
         """Remove a stock from the portfolio."""
         symbol = symbol.upper()
         if self.use_supabase:
             try:
-                self.supabase.table("holdings").delete().eq("symbol", symbol).execute()
+                self.supabase.table("holdings").delete().eq("user_id", user_id).eq("symbol", symbol).execute()
                 return {"status": "success"}
             except Exception as e:
                 return {"status": "error", "msg": str(e)}
         else:
             try:
-                data = self.get_portfolio()
+                data = self.get_portfolio(user_id)
                 data = [d for d in data if d["symbol"] != symbol]
                 with open(self.local_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2)
