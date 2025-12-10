@@ -8,6 +8,7 @@ Features:
 import sys
 import io
 import os
+import time
 import random
 import requests
 import akshare as ak
@@ -22,10 +23,27 @@ DEFAULT_ADJUST = 'qfq'
 # ===========================================
 
 # Clean up any potential proxy environment variables to ensure direct connection
+# Removed NO_PROXY to allow user-defined proxies
 if 'HTTP_PROXY' in os.environ:
     del os.environ['HTTP_PROXY']
 if 'HTTPS_PROXY' in os.environ:
     del os.environ['HTTPS_PROXY']
+
+# Random User Agents for "Mocking" IP behavior (though mostly for headers)
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+]
+
+def get_sina_symbol(code: str) -> str:
+    """Convert 6-digit code to Sina format (sh/sz/bj prefix)."""
+    if code.startswith('6'): return f"sh{code}"
+    if code.startswith('0') or code.startswith('3'): return f"sz{code}"
+    if code.startswith('8') or code.startswith('4'): return f"bj{code}"
+    return code
 
 class DataFetcher:
     """
@@ -129,32 +147,96 @@ class DataFetcher:
                     if 'change_pct' not in df.columns: df['change_pct'] = df['close'].pct_change() * 100
 
             else:
-                # === A股接口 (Method A: Eastmoney / ak.stock_zh_a_hist) ===
+                # === A股接口 (Method A: Eastmoney / Method B: Sina) ===
                 # Primary source, usually fastest and most detailed
-                try:
-                    df = ak.stock_zh_a_hist(
-                        symbol=symbol,
-                        period=period,
-                        start_date=start_date_str,
-                        end_date=end_date_str,
-                        adjust=adjust
-                    )
-                except Exception as e:
-                    print(f"Akshare CN (Eastmoney) fetch error: {e}")
-                    df = None
+                # Modify: Always fetch daily data, then resample locally if needed (Same as US Logic)
+                # Add Retry Logic and Fallback
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        # Random wait to reduce pressure
+                        if attempt > 0:
+                            wait_time = random.uniform(0.5, 2.0)
+                            print(f"  Retry {attempt}/{max_retries-1} after {wait_time:.1f}s...")
+                            time.sleep(wait_time)
+
+                        # Strategy 1: Eastmoney (stock_zh_a_hist) - Preferred
+                        try:
+                            df = ak.stock_zh_a_hist(
+                                symbol=symbol,
+                                period="daily", # Force daily
+                                start_date=start_date_str,
+                                end_date=end_date_str,
+                                adjust=adjust
+                            )
+                        except Exception as e1:
+                            print(f"  [!] Eastmoney failed: {e1}")
+                            # Strategy 2: Sina (stock_zh_a_daily) - Fallback
+                            # Note: Sina API often requires prefix
+                            print("  [->] Switching to Sina interface...")
+                            sina_symbol = get_sina_symbol(symbol)
+                            df = ak.stock_zh_a_daily(
+                                symbol=sina_symbol,
+                                start_date=start_date_str,
+                                end_date=end_date_str,
+                                adjust=adjust
+                            )
+                        
+                        if df is not None and not df.empty:
+                            break # Success, exit loop
+                            
+                    except Exception as e:
+                        print(f"  [!] Attempt {attempt+1} failed: {e}")
+                        if attempt == max_retries - 1:
+                            print("  [!] All retries failed for A-Share fetch.")
+                            df = None
 
                 if df is not None and not df.empty:
                     # 统一列名
-                    # Eastmoney returns Chinese columns, Sina returns English.
-                    # We use a safe rename that ignores missing keys.
+                    # Handle both Eastmoney (Chinese) and Sina (English/mixed) columns
                     rename_map = {
                         '日期': 'date', '股票代码': 'code', '开盘': 'open', '收盘': 'close', 
                         '最高': 'high', '最低': 'low', '成交量': 'volume', '成交额': 'amount', 
                         '振幅': 'amplitude', '涨跌幅': 'change_pct', '涨跌额': 'change', 
                         '换手率': 'turnover'
                     }
-                    # Only rename columns that exist
                     df.rename(columns=rename_map, inplace=True)
+                    
+                    # 确保数值列为 float 类型
+                    numeric_cols = ['open', 'close', 'high', 'low', 'volume', 'amount']
+                    for col in numeric_cols:
+                        if col in df.columns:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                    # 处理 A 股的周K/月K重采样 (Resampling) - 逻辑与美股一致
+                    if period in ['weekly', 'monthly']:
+                        # 转换日期格式进行索引
+                        df['date'] = pd.to_datetime(df['date'])
+                        df.set_index('date', inplace=True)
+                        
+                        # 确定重采样规则 (W=周, M=月)
+                        # W-FRI 表示每周五结束
+                        rule = 'W-FRI' if period == 'weekly' else 'M'
+                        
+                        agg_dict = {
+                            'open': 'first',
+                            'high': 'max',
+                            'low': 'min',
+                            'close': 'last',
+                            'volume': 'sum'
+                        }
+                        # 如果 amount 存在则聚合
+                        if 'amount' in df.columns:
+                            agg_dict['amount'] = 'sum'
+                            
+                        df_resampled = df.resample(rule).agg(agg_dict)
+                        df_resampled.dropna(subset=['open', 'close'], inplace=True) # 移除无交易数据的周期
+                        
+                        # 重算涨跌幅
+                        df_resampled['change_pct'] = df_resampled['close'].pct_change() * 100
+                        
+                        # 重置索引，让 date 变回列
+                        df = df_resampled.reset_index()
 
             # === 通用数据清洗 ===
             if df is None or df.empty:
