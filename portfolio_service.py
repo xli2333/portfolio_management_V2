@@ -171,9 +171,21 @@ class PortfolioService:
             return "API Key Missing or Client Not Initialized"
 
         try:
+            # For A-Shares, fetch company name for better AI context
+            prompt_symbol = symbol
+            if symbol.isdigit():
+                try:
+                    from data_fetcher import DataFetcher
+                    fetcher = DataFetcher()
+                    info = fetcher.get_stock_info(symbol)
+                    if info and info.get('name') and info['name'] != symbol:
+                        prompt_symbol = f"{symbol} (公司名: {info['name']})"
+                except Exception as e:
+                    logger.warning(f"Failed to fetch company name for {symbol}: {e}")
+
             # Use the configured Gemini client
             response = self.gemini_client.generate_content(
-                f"请用一句话简明扼要地总结股票代码为 {symbol} 的公司的主要业务和行业地位（不要废话，直接说重点）。",
+                f"请用一句话简明扼要地总结股票代码为 {prompt_symbol} 的公司的主要业务和行业地位（不要废话，直接说重点）。",
                 safety_settings=[
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
                     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
