@@ -41,14 +41,14 @@ export function Auth({ onLogin }: { onLogin: () => void }) {
       
       {/* Avant-Garde Header */}
       <div className="w-full mb-20 relative">
-        <div className="absolute -left-6 -top-6 w-12 h-12 border-t-8 border-l-8 border-black"></div>
-        <h1 className="text-8xl font-black font-serif tracking-tighter leading-none mb-4">
+        <div className="absolute -left-6 -top-6 w-12 h-12 border-t-8 border-l-8 border-neon"></div>
+        <h1 className="text-8xl font-black font-serif tracking-tighter leading-snug mb-4">
           {isRegistering ? '加入' : '进入'}
           <br />
-          <span className="text-neon bg-black px-2 text-white">系统</span>
+          <span className="text-neon bg-black px-2 inline-block mt-2">系统</span>
         </h1>
-        <p className="font-mono text-sm tracking-[0.3em] uppercase text-gray-400 pl-1">
-          System Access Protocol v2.5
+        <p className="font-mono text-sm tracking-[0.3em] uppercase text-gray-400 pl-1 flex items-center">
+          <span className="text-neon mr-2 text-xl leading-none">●</span> System Access Protocol v2.5
         </p>
       </div>
 
