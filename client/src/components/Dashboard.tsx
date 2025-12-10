@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, TrendingUp, Activity, PieChart as PieChartIcon } from 'lucide-react';
+import { Trash2, TrendingUp, Activity, PieChart as PieChartIcon, LayoutGrid, BrainCircuit } from 'lucide-react';
 import { createChart, ColorType } from 'lightweight-charts';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { cn } from '@/lib/utils';
+import { AIAdvisorView } from './AIAdvisorView';
 
 // --- Types ---
 interface Holding {
@@ -48,7 +49,68 @@ interface AnalysisData {
 
 interface DashboardProps {
     onNavigate: (symbol: string) => void;
+    onNavigateKnowledgeBase: (symbol: string) => void;
     userId: string;
+}
+
+function EditableCell({ 
+    value, 
+    onSave, 
+    type = "text",
+    format = (v: any) => v,
+    className = ""
+}: { 
+    value: string | number, 
+    onSave: (val: string | number) => Promise<void>,
+    type?: string,
+    format?: (v: any) => React.ReactNode,
+    className?: string
+}) {
+    const [editing, setEditing] = useState(false);
+    const [temp, setTemp] = useState(value);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => { setTemp(value); }, [value]);
+
+    const handleSave = async () => {
+        if (temp == value) { setEditing(false); return; }
+        setSaving(true);
+        try {
+            await onSave(temp);
+            setEditing(false);
+        } catch (e) {
+            console.error(e);
+            alert("Update failed");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (editing) {
+        return (
+            <input 
+                autoFocus
+                type={type}
+                value={temp}
+                onChange={e => setTemp(e.target.value)}
+                onBlur={handleSave}
+                onKeyDown={e => e.key === 'Enter' && handleSave()}
+                disabled={saving}
+                onClick={e => e.stopPropagation()}
+                className={cn("w-full bg-white border-2 border-black px-1 py-0.5 text-right font-mono outline-none text-sm h-8", className)}
+            />
+        )
+    }
+
+    return (
+        <div 
+            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            className={cn("cursor-pointer border-b border-dashed border-gray-300 hover:border-black hover:bg-gray-100 transition-colors px-1 h-8 flex items-center justify-end", className)}
+            title="Click to edit"
+        >
+            {format(value)}
+        </div>
+    )
 }
 
 function CompanySummary({ symbol }: { symbol: string }) {
@@ -66,8 +128,8 @@ function CompanySummary({ symbol }: { symbol: string }) {
         return () => { mounted = false; };
     }, [symbol]);
 
-    if (!summary) return <div className="h-4 w-24 bg-gray-100 animate-pulse rounded"></div>;
-    return <div className="text-xs text-gray-500 font-serif leading-tight max-w-[200px]">{summary}</div>;
+    if (!summary) return <div className="h-4 w-16 bg-gray-100 animate-pulse rounded"></div>;
+    return <div className="text-[10px] text-gray-500 font-serif leading-tight whitespace-normal break-words">{summary}</div>;
 }
 
 function AnalyticsSection({ data, holdings }: { data: AnalysisData, holdings: Holding[] }) {
@@ -202,12 +264,13 @@ function AnalyticsSection({ data, holdings }: { data: AnalysisData, holdings: Ho
     );
 }
 
-export function Dashboard({ onNavigate, userId }: DashboardProps) {
+export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: DashboardProps) {
     const [holdings, setHoldings] = useState<Holding[]>([]);
     const [overview, setOverview] = useState<PortfolioOverview | null>(null);
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
     const [loading, setLoading] = useState(true);
     const [analysisLoading, setAnalysisLoading] = useState(false);
+    const [currentTab, setCurrentTab] = useState<'portfolio' | 'advisor'>('portfolio');
     
     const [showAddModal, setShowAddModal] = useState(false);
     
@@ -296,6 +359,31 @@ export function Dashboard({ onNavigate, userId }: DashboardProps) {
         }
     };
 
+    const handleUpdateStock = async (symbol: string, field: 'shares' | 'cost_basis', value: string | number) => {
+        const holding = holdings.find(h => h.symbol === symbol);
+        if (!holding) return;
+
+        const newShares = field === 'shares' ? Number(value) : holding.shares;
+        const newCost = field === 'cost_basis' ? Number(value) : holding.cost_basis;
+
+        try {
+            const res = await fetch(`${apiBase}/api/portfolio/update`, {
+                method: 'POST',
+                headers: { 'User-ID': userId },
+                body: JSON.stringify({
+                    symbol: symbol,
+                    quantity: newShares,
+                    cost: newCost
+                })
+            });
+            if (!res.ok) throw new Error("Update failed");
+            fetchPortfolio(); // Refresh
+        } catch (err) {
+            console.error(err);
+            throw err;
+        }
+    };
+
     const handleRemove = async (symbol: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if(!confirm(`确认从组合中移除 ${symbol} 吗？`)) return;
@@ -318,174 +406,221 @@ export function Dashboard({ onNavigate, userId }: DashboardProps) {
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            {/* Header / Overview Card */}
-            <div className="grid grid-cols-12 gap-8 mb-12">
-                <div className="col-span-12 lg:col-span-8">
-                     <h2 className="text-sm font-bold font-serif text-gray-500 mb-2 tracking-widest">总资产净值 ({overview?.currency || 'USD'})</h2>
-                     <div className="text-8xl font-black tracking-tighter leading-none mb-6 font-mono text-black">
-                        {overview ? formatMoney(overview.total_market_value, overview.currency) : '---'}
-                     </div>
-                     <div className="flex gap-12 items-baseline border-t border-black pt-4">
-                        <div>
-                            <span className="text-xs font-bold text-gray-500 font-serif">总盈亏</span>
-                            <div className={cn("text-3xl font-black font-mono mt-1", (overview?.total_pl || 0) >= 0 ? "text-neon-dim" : "text-red-600")}>
-                                {overview ? `${overview.total_pl >= 0 ? '+' : ''}${formatMoney(overview.total_pl, overview.currency)}` : '---'}
-                                <span className="ml-2 text-lg opacity-60 font-medium">
-                                    ({overview?.total_pl_pct != null ? overview.total_pl_pct.toFixed(2) : '0.00'}%)
-                                </span>
-                            </div>
-                        </div>
-                        <div>
-                            <span className="text-xs font-bold text-gray-500 font-serif">今日盈亏</span>
-                            <div className={cn("text-3xl font-black font-mono mt-1", (overview?.day_pl || 0) >= 0 ? "text-neon-dim" : "text-red-600")}>
-                                {overview ? `${overview.day_pl >= 0 ? '+' : ''}${formatMoney(overview.day_pl, overview.currency)}` : '---'}
-                            </div>
-                        </div>
-                     </div>
-                </div>
-
-                <div className="col-span-12 lg:col-span-4 flex flex-col justify-end items-end gap-4">
-                     <button 
-                        onClick={() => setShowAddModal(true)}
-                        className="bg-black text-white w-full py-4 text-xl font-bold font-serif tracking-widest hover:bg-neon hover:text-black transition-colors border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none active:translate-x-[4px] active:translate-y-[4px]"
-                     >
-                        + 添加持仓
-                     </button>
-                     <div className="text-right text-xs text-gray-400 font-mono w-full">
-                        实时估值 / 延时15分钟
-                     </div>
+            {/* Top Bar / Tab Switcher */}
+            <div className="flex justify-between items-center mb-8 border-b-2 border-gray-100 pb-2">
+                <div className="flex gap-8">
+                    <button 
+                        onClick={() => setCurrentTab('portfolio')}
+                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest", 
+                            currentTab === 'portfolio' ? "border-black text-black" : "border-transparent text-gray-400 hover:text-gray-600"
+                        )}
+                    >
+                        <LayoutGrid size={18} />
+                        资产管理
+                    </button>
+                    <button 
+                        onClick={() => setCurrentTab('advisor')}
+                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest", 
+                            currentTab === 'advisor' ? "border-neon text-black" : "border-transparent text-gray-400 hover:text-gray-600"
+                        )}
+                    >
+                        <BrainCircuit size={18} />
+                        AI 投顾 (Advisor)
+                        <span className="bg-black text-white text-[10px] px-1 py-0.5 rounded-sm">NEW</span>
+                    </button>
                 </div>
             </div>
 
-            {/* Advanced Analytics Section */}
-            {analysisLoading ? (
-                <div className="mb-12 p-8 border-2 border-dashed border-gray-200 text-center text-gray-400 font-mono animate-pulse">
-                    正在计算高级分析数据...
-                </div>
-            ) : analysis ? (
-                <AnalyticsSection data={analysis} holdings={holdings} />
-            ) : null}
-
-            {/* Holdings Table */}
-            <div className="border-t-4 border-black">
-                <div className="grid grid-cols-12 border-b-2 border-black py-4 text-sm font-bold font-serif text-gray-500">
-                    <div className="col-span-2 pl-2">资产名称</div>
-                    <div className="col-span-3">公司简介</div>
-                    <div className="col-span-2 text-right">现价</div>
-                    <div className="col-span-1 text-right">数量</div>
-                    <div className="col-span-2 text-right">市值</div>
-                    <div className="col-span-1 text-right">盈亏</div>
-                    <div className="col-span-1 text-center">操作</div>
-                </div>
-                
-                {loading ? (
-                    <div className="py-12 text-center text-gray-400 font-mono animate-pulse">正在加载资产数据...</div>
-                ) : holdings.length === 0 ? (
-                    <div className="py-12 text-center text-gray-400 font-mono">暂无持仓，请点击上方添加。</div>
-                ) : (
-                    holdings.map((h) => (
-                        <div 
-                            key={h.symbol} 
-                            onClick={() => onNavigate(h.symbol)}
-                            className="grid grid-cols-12 border-b border-gray-200 py-5 items-center hover:bg-gray-50 cursor-pointer group transition-colors"
-                        >
-                            <div className="col-span-2 pl-2">
-                                <div className="font-black text-xl tracking-tight leading-none font-mono text-black">{h.symbol}</div>
-                                <div className="text-xs text-gray-500 mt-1 font-serif">{h.name}</div>
+            {currentTab === 'advisor' ? (
+                <AIAdvisorView holdings={holdings} onNavigate={onNavigateKnowledgeBase} />
+            ) : (
+                <>
+                    {/* Header / Overview Card */}
+                    <div className="grid grid-cols-12 gap-8 mb-12">
+                        <div className="col-span-12 lg:col-span-8">
+                            <h2 className="text-sm font-bold font-serif text-gray-500 mb-2 tracking-widest">总资产净值 ({overview?.currency || 'USD'})</h2>
+                            <div className="text-8xl font-black tracking-tighter leading-none mb-6 font-mono text-black">
+                                {overview ? formatMoney(overview.total_market_value, overview.currency) : '---'}
                             </div>
-                            <div className="col-span-3 pr-4">
-                                <CompanySummary symbol={h.symbol} />
-                            </div>
-                            <div className="col-span-2 text-right font-mono text-lg">
-                                <div>{formatMoney(h.current_price, h.currency)}</div>
-                                <div className={cn("text-xs font-bold", h.day_change_pct >= 0 ? "text-green-600" : "text-red-600")}>
-                                    {h.day_change_pct > 0 ? '+' : ''}{h.day_change_pct.toFixed(2)}%
-                                </div>
-                            </div>
-                            <div className="col-span-1 text-right font-mono text-gray-600 text-lg font-bold">
-                                {h.shares}
-                            </div>
-                            <div className="col-span-2 text-right font-mono font-black text-lg">
-                                {formatMoney(h.market_value, h.currency)}
-                            </div>
-                            <div className="col-span-1 text-right font-mono">
-                                <div className={cn("font-bold text-lg", h.unrealized_pl >= 0 ? "text-black" : "text-red-600")}>
-                                    {h.unrealized_pl > 0 ? '+' : ''}{h.unrealized_pl_pct.toFixed(0)}%
-                                </div>
-                            </div>
-                            <div className="col-span-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                    onClick={(e) => handleRemove(h.symbol, e)}
-                                    className="text-gray-300 hover:text-red-600 p-2 transition-colors"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-
-            {/* Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-white w-full max-w-lg p-8 border-4 border-white shadow-2xl relative animate-in zoom-in-95 duration-200">
-                        <h3 className="text-2xl font-black mb-8 font-serif border-b-2 border-black pb-4">添加新持仓</h3>
-                        
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-xs font-bold font-serif text-gray-500 mb-2">股票代码 (Symbol)</label>
-                                <input 
-                                    className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none uppercase placeholder:text-gray-300 transition-colors"
-                                    placeholder="600519"
-                                    value={newSymbol}
-                                    onChange={e => setNewSymbol(e.target.value.toUpperCase())}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="flex gap-12 items-baseline border-t border-black pt-4">
                                 <div>
-                                    <label className="block text-xs font-bold font-serif text-gray-500 mb-2">持仓数量 (Shares)</label>
-                                    <input 
-                                        type="number"
-                                        className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none transition-colors"
-                                        placeholder="100"
-                                        value={newShares}
-                                        onChange={e => setNewShares(e.target.value)}
-                                    />
+                                    <span className="text-xs font-bold text-gray-500 font-serif">总盈亏</span>
+                                    <div className={cn("text-3xl font-black font-mono mt-1", (overview?.total_pl || 0) >= 0 ? "text-neon-dim" : "text-red-600")}>
+                                        {overview ? `${overview.total_pl >= 0 ? '+' : ''}${formatMoney(overview.total_pl, overview.currency)}` : '---'}
+                                        <span className="ml-2 text-lg opacity-60 font-medium">
+                                            ({overview?.total_pl_pct != null ? overview.total_pl_pct.toFixed(2) : '0.00'}%)
+                                        </span>
+                                    </div>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold font-serif text-gray-500 mb-2">平均成本 (Cost)</label>
-                                    <input 
-                                        type="number"
-                                        step="0.01"
-                                        className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none transition-colors"
-                                        placeholder="1500.00"
-                                        value={newCost}
-                                        onChange={e => setNewCost(e.target.value)}
-                                    />
+                                    <span className="text-xs font-bold text-gray-500 font-serif">今日盈亏</span>
+                                    <div className={cn("text-3xl font-black font-mono mt-1", (overview?.day_pl || 0) >= 0 ? "text-neon-dim" : "text-red-600")}>
+                                        {overview ? `${overview.day_pl >= 0 ? '+' : ''}${formatMoney(overview.day_pl, overview.currency)}` : '---'}
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        {addError && <div className="mt-4 text-red-600 font-bold text-sm">{addError}</div>}
-
-                        <div className="grid grid-cols-2 gap-4 mt-8">
-                             <button 
-                                onClick={() => setShowAddModal(false)}
-                                className="bg-gray-100 text-gray-500 font-bold font-serif py-4 hover:bg-gray-200 transition-colors"
-                             >
-                                取消
-                             </button>
-                             <button 
-                                onClick={handleAddStock}
-                                disabled={isAdding}
-                                className="bg-black text-white font-bold font-serif py-4 hover:bg-neon hover:text-black transition-colors"
-                             >
-                                {isAdding ? '保存中...' : '确认添加'}
-                             </button>
+                        <div className="col-span-12 lg:col-span-4 flex flex-col justify-end items-end gap-4">
+                            <button 
+                                onClick={() => setShowAddModal(true)}
+                                className="bg-black text-white w-full py-4 text-xl font-bold font-serif tracking-widest hover:bg-neon hover:text-black transition-colors border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none active:translate-x-[4px] active:translate-y-[4px]"
+                            >
+                                + 添加持仓
+                            </button>
+                            <div className="text-right text-xs text-gray-400 font-mono w-full">
+                                实时估值 / 延时15分钟
+                            </div>
                         </div>
                     </div>
-                </div>
+
+                    {/* Advanced Analytics Section */}
+                    {analysisLoading ? (
+                        <div className="mb-12 p-8 border-2 border-dashed border-gray-200 text-center text-gray-400 font-mono animate-pulse">
+                            正在计算高级分析数据...
+                        </div>
+                    ) : analysis ? (
+                        <AnalyticsSection data={analysis} holdings={holdings} />
+                    ) : null}
+
+                    {/* Holdings Table */}
+                    <div className="border-t-4 border-black">
+                        <div className="grid grid-cols-12 border-b-2 border-black py-4 text-sm font-bold font-serif text-gray-500">
+                            <div className="col-span-2 pl-2">资产名称</div>
+                            <div className="col-span-2">简介</div>
+                            <div className="col-span-1 text-right">成本</div>
+                            <div className="col-span-2 text-right">现价</div>
+                            <div className="col-span-1 text-right">数量</div>
+                            <div className="col-span-2 text-right">市值</div>
+                            <div className="col-span-1 text-right">盈亏</div>
+                            <div className="col-span-1 text-center">操作</div>
+                        </div>
+                        
+                        {loading ? (
+                            <div className="py-12 text-center text-gray-400 font-mono animate-pulse">正在加载资产数据...</div>
+                        ) : holdings.length === 0 ? (
+                            <div className="py-12 text-center text-gray-400 font-mono">暂无持仓，请点击上方添加。</div>
+                        ) : (
+                            holdings.map((h) => (
+                                <div 
+                                    key={h.symbol} 
+                                    className="grid grid-cols-12 border-b border-gray-200 py-5 items-center hover:bg-gray-50 group transition-colors"
+                                >
+                                    <div 
+                                        onClick={() => onNavigate(h.symbol)}
+                                        className="col-span-2 pl-2 cursor-pointer hover:underline decoration-2 underline-offset-4"
+                                        title="点击查看详情"
+                                    >
+                                        <div className="font-black text-xl tracking-tight leading-none font-mono text-black">{h.symbol}</div>
+                                        <div className="text-xs text-gray-500 mt-1 font-serif truncate">{h.name}</div>
+                                    </div>
+                                    <div className="col-span-2 pr-2">
+                                        <CompanySummary symbol={h.symbol} />
+                                    </div>
+                                    <div className="col-span-1 text-right font-mono text-lg text-gray-600">
+                                        <EditableCell 
+                                            value={h.cost_basis} 
+                                            onSave={(v) => handleUpdateStock(h.symbol, 'cost_basis', v)}
+                                            type="number"
+                                            format={(v) => formatMoney(Number(v), h.currency)}
+                                        />
+                                    </div>
+                                    <div className="col-span-2 text-right font-mono text-lg">
+                                        <div>{formatMoney(h.current_price, h.currency)}</div>
+                                        <div className={cn("text-xs font-bold", h.day_change_pct >= 0 ? "text-green-600" : "text-red-600")}>
+                                            {h.day_change_pct > 0 ? '+' : ''}{h.day_change_pct.toFixed(2)}%
+                                        </div>
+                                    </div>
+                                    <div className="col-span-1 text-right font-mono text-gray-600 text-lg font-bold">
+                                        <EditableCell 
+                                            value={h.shares} 
+                                            onSave={(v) => handleUpdateStock(h.symbol, 'shares', v)}
+                                            type="number"
+                                        />
+                                    </div>
+                                    <div className="col-span-2 text-right font-mono font-black text-lg">
+                                        {formatMoney(h.market_value, h.currency)}
+                                    </div>
+                                    <div className="col-span-1 text-right font-mono">
+                                        <div className={cn("font-bold text-lg", h.unrealized_pl >= 0 ? "text-black" : "text-red-600")}>
+                                            {h.unrealized_pl > 0 ? '+' : ''}{h.unrealized_pl_pct.toFixed(0)}%
+                                        </div>
+                                    </div>
+                                    <div className="col-span-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => handleRemove(h.symbol, e)}
+                                            className="text-gray-300 hover:text-red-600 p-2 transition-colors"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Modal */}
+                    {showAddModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                            <div className="bg-white w-full max-w-lg p-8 border-4 border-white shadow-2xl relative animate-in zoom-in-95 duration-200">
+                                <h3 className="text-2xl font-black mb-8 font-serif border-b-2 border-black pb-4">添加新持仓</h3>
+                                
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-xs font-bold font-serif text-gray-500 mb-2">股票代码 (Symbol)</label>
+                                        <input 
+                                            className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none uppercase placeholder:text-gray-300 transition-colors"
+                                            placeholder="600519"
+                                            value={newSymbol}
+                                            onChange={e => setNewSymbol(e.target.value.toUpperCase())}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold font-serif text-gray-500 mb-2">持仓数量 (Shares)</label>
+                                            <input 
+                                                type="number"
+                                                className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none transition-colors"
+                                                placeholder="100"
+                                                value={newShares}
+                                                onChange={e => setNewShares(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold font-serif text-gray-500 mb-2">平均成本 (Cost)</label>
+                                            <input 
+                                                type="number"
+                                                step="0.01"
+                                                className="w-full bg-gray-50 border-2 border-gray-200 p-4 text-xl font-bold font-mono focus:border-black focus:ring-0 outline-none transition-colors"
+                                                placeholder="1500.00"
+                                                value={newCost}
+                                                onChange={e => setNewCost(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {addError && <div className="mt-4 text-red-600 font-bold text-sm">{addError}</div>}
+
+                                <div className="grid grid-cols-2 gap-4 mt-8">
+                                    <button 
+                                        onClick={() => setShowAddModal(false)}
+                                        className="bg-gray-100 text-gray-500 font-bold font-serif py-4 hover:bg-gray-200 transition-colors"
+                                    >
+                                        取消
+                                    </button>
+                                    <button 
+                                        onClick={handleAddStock}
+                                        disabled={isAdding}
+                                        className="bg-black text-white font-bold font-serif py-4 hover:bg-neon hover:text-black transition-colors"
+                                    >
+                                        {isAdding ? '保存中...' : '确认添加'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );

@@ -19,9 +19,14 @@ import numpy as np
 from flask_cors import CORS
 from portfolio_service import PortfolioService
 from data_fetcher import DataFetcher
+from knowledge_service import KnowledgeService
+from report_generator import create_chat_pdf, create_markdown_pdf
+from analyst_agent import AnalystAgent
 
 # Initialize services
 portfolio_service = PortfolioService()
+knowledge_service = KnowledgeService()
+analyst_agent = AnalystAgent()
 
 # PDF reporting is disabled for local testing.
 HAVE_REPORT = False
@@ -180,6 +185,28 @@ def add_portfolio_item():
             return jsonify({'error': 'Missing fields'}), 400
             
         result = portfolio_service.add_stock(user_id, symbol, quantity, cost)
+        if result.get('status') == 'error':
+             return jsonify({'error': result.get('msg')}), 500
+             
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/portfolio/update', methods=['POST'])
+def update_portfolio_item():
+    """Update an existing stock holding."""
+    try:
+        user_id = request.headers.get('User-ID', 'anonymous')
+        data = request.get_json(force=True)
+        symbol = data.get('symbol')
+        quantity = data.get('quantity')
+        cost = data.get('cost')
+        
+        if not symbol or quantity is None or cost is None:
+            return jsonify({'error': 'Missing fields'}), 400
+            
+        # Reusing update_stock logic (which wraps add_stock with upsert)
+        result = portfolio_service.update_stock(user_id, symbol, quantity, cost)
         if result.get('status') == 'error':
              return jsonify({'error': result.get('msg')}), 500
              
@@ -347,6 +374,116 @@ def remove_portfolio_item():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# --- Knowledge Base APIs ---
+
+@app.route('/api/knowledge/upload', methods=['POST'])
+def upload_document():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        symbol = request.form.get('symbol')
+        
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        if not symbol:
+            return jsonify({'error': 'Missing symbol'}), 400
+            
+        # Validate PDF
+        if not file.filename.lower().endswith('.pdf'):
+             return jsonify({'error': 'Only PDF files are allowed'}), 400
+
+        result = knowledge_service.save_document(symbol, file, file.filename)
+        if "error" in result:
+             return jsonify(result), 500
+             
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/list', methods=['GET'])
+def list_documents():
+    symbol = request.args.get('symbol')
+    if not symbol:
+        return jsonify({'error': 'Missing symbol'}), 400
+    try:
+        docs = knowledge_service.list_documents(symbol)
+        return jsonify(docs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/delete', methods=['DELETE'])
+def delete_document():
+    doc_id = request.args.get('doc_id')
+    if not doc_id:
+        return jsonify({'error': 'Missing doc_id'}), 400
+    try:
+        success = knowledge_service.delete_document(doc_id)
+        if success:
+            return jsonify({'status': 'success'})
+        else:
+            return jsonify({'error': 'Document not found or delete failed'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge/save_chat', methods=['POST'])
+def save_chat_to_knowledge():
+    try:
+        data = request.get_json(force=True)
+        symbol = data.get('symbol')
+        messages = data.get('messages') # List of strings
+        
+        if not symbol or not messages:
+            return jsonify({'error': 'Missing symbol or messages'}), 400
+            
+        # Generate PDF
+        pdf_bytes = create_chat_pdf(symbol, messages)
+        
+        # Save
+        filename = f"chat_export_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+        result = knowledge_service.save_document(symbol, pdf_bytes, filename, doc_type='chat_history')
+        
+        if "error" in result:
+             return jsonify(result), 500
+             
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agent/generate_report', methods=['POST'])
+def generate_agent_report():
+    try:
+        data = request.get_json(force=True)
+        symbol = data.get('symbol')
+        model = data.get('model') or 'gemini-2.5-pro'
+        selected_file_ids = data.get('selected_file_ids') or []
+        
+        if not symbol:
+            return jsonify({'error': 'Missing symbol'}), 400
+            
+        # 1. Get Context
+        docs_text = knowledge_service.get_documents_content(selected_file_ids)
+        
+        # 2. Run Agent
+        report_text = analyst_agent.generate_deep_research_report(symbol, docs_text, model)
+        if report_text.startswith("Error") or report_text.startswith("Agent Error"):
+             return jsonify({'error': report_text}), 500
+             
+        # 3. Generate PDF
+        pdf_bytes = create_markdown_pdf(symbol, report_text)
+        
+        # 4. Save to Knowledge Base
+        filename = f"DeepReport_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        save_result = knowledge_service.save_document(symbol, pdf_bytes, filename, doc_type='ai_report')
+        
+        return jsonify({
+            'status': 'success',
+            'report_text': report_text,
+            'file_record': save_result
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # --- End Portfolio APIs ---
 
 @app.route('/analyze', methods=['GET', 'POST'])
@@ -461,6 +598,24 @@ def stock_summary():
         # Delegate to portfolio_service to handle caching and AI call
         summary = portfolio_service.get_company_summary(symbol)
         return jsonify({'summary': summary})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    try:
+        data = request.get_json(force=True)
+        symbol = (data.get('symbol') or '').strip().upper()
+        message = (data.get('message') or '').strip()
+        history = data.get('history') or []
+        selected_file_ids = data.get('selected_file_ids') or []
+        model = data.get('model') or 'gemini-2.5-flash'
+        
+        if not symbol or not message:
+            return jsonify({'error': 'Missing symbol or message'}), 400
+            
+        reply = portfolio_service.chat_with_gemini(symbol, message, history, selected_file_ids, model)
+        return jsonify({'reply': reply})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

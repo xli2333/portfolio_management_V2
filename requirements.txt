@@ -6,6 +6,7 @@ numpy>=1.26.0
 
 # Data processing
 openpyxl>=3.1.0
+pypdf>=3.0.0
 
 # Web framework
 requests>=2.31.0

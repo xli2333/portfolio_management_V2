@@ -3,9 +3,10 @@ import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { Dashboard } from './components/Dashboard';
 import { Analyzer } from './components/Analyzer';
+import { StockKnowledgeBase } from './components/StockKnowledgeBase';
 import { Auth } from './components/Auth';
 
-type View = 'dashboard' | 'analyzer';
+type View = 'dashboard' | 'analyzer' | 'knowledgeBase';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -14,18 +15,20 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    // DEV MODE: Bypass Auth
+    // supabase.auth.getSession().then(({ data: { session } }) => {
+    //   setSession(session);
+    //   setLoading(false);
+    // });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    // const {
+    //   data: { subscription },
+    // } = supabase.auth.onAuthStateChange((_event, session) => {
+    //   setSession(session);
+    // });
 
-    return () => subscription.unsubscribe();
+    // return () => subscription.unsubscribe();
+    setLoading(false); 
   }, []);
 
   const navigateToAnalyzer = (symbol: string) => {
@@ -33,13 +36,19 @@ export default function App() {
     setView('analyzer');
   };
 
+  const navigateToKnowledgeBase = (symbol: string) => {
+    setSelectedSymbol(symbol);
+    setView('knowledgeBase');
+  }
+
   const navigateToDashboard = () => {
     setView('dashboard');
     setSelectedSymbol('');
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // await supabase.auth.signOut();
+    window.location.reload();
   };
 
   if (loading) {
@@ -52,13 +61,8 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-white text-black font-sans selection:bg-neon selection:text-black flex items-center justify-center p-6">
-        <Auth onLogin={() => {}} />
-      </div>
-    );
-  }
+  // DEV MODE: Always render main app
+  // if (!session) { ... } 
 
   return (
     <div className="min-h-screen bg-white text-black font-sans selection:bg-neon selection:text-black">
@@ -79,22 +83,31 @@ export default function App() {
             </div>
             <div className="text-right">
                  <div className="text-xs font-bold font-serif tracking-widest mb-1">
-                    用户: {session.user.email?.split('@')[0].toUpperCase()}
+                    用户: DEV_USER
                  </div>
                  <div className="flex items-center justify-end gap-4">
-                    <div className="text-xs font-mono text-neon-dim">● ONLINE</div>
+                    <div className="text-xs font-mono text-neon-dim">● DEV MODE</div>
                     <button 
                         onClick={handleLogout}
                         className="text-xs font-mono font-bold text-gray-400 hover:text-red-500 underline decoration-2 underline-offset-2 transition-colors"
                     >
-                        LOGOUT
+                        RESET
                     </button>
                  </div>
             </div>
         </header>
 
         {view === 'dashboard' ? (
-          <Dashboard onNavigate={navigateToAnalyzer} userId={session.user.id} />
+          <Dashboard 
+            onNavigate={navigateToAnalyzer} 
+            onNavigateKnowledgeBase={navigateToKnowledgeBase}
+            userId="test-user-id" 
+          />
+        ) : view === 'knowledgeBase' ? (
+          <StockKnowledgeBase 
+            symbol={selectedSymbol} 
+            onBack={navigateToDashboard} 
+          />
         ) : (
           <Analyzer 
             initialSymbol={selectedSymbol} 

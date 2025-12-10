@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
+import { StockChat } from './StockChat';
 
 // --- Types ---
 
@@ -403,6 +404,9 @@ export function Analyzer({ initialSymbol, onBack }: AnalyzerProps) {
 
                 {/* Signals Grid */}
                 <SignalGrid signals={result.signals} />
+
+                {/* AI Chat Widget */}
+                <StockChat symbol={symbol} />
 
             </main>
         ) : (

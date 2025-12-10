@@ -13,6 +13,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from knowledge_service import KnowledgeService
+
 class PortfolioService:
     def __init__(self):
         self.supabase_url = os.environ.get("SUPABASE_URL")
@@ -22,9 +24,14 @@ class PortfolioService:
         self.use_supabase = bool(self.supabase_url and self.supabase_key)
         self.gemini_key = os.environ.get("GEMINI_API_KEY")
         
+        # Configure globally if key exists
         if self.gemini_key:
-            genai.configure(api_key=self.gemini_key)
-            self.gemini_client = genai.GenerativeModel("gemini-2.5-pro") # Initialize model here
+            try:
+                genai.configure(api_key=self.gemini_key)
+                self.gemini_client = genai.GenerativeModel("gemini-2.5-pro") # Default instance
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini client: {e}")
+                self.gemini_client = None
         else:
             self.gemini_client = None
             
@@ -92,8 +99,9 @@ class PortfolioService:
             try:
                 # Insert the record directly. Supabase doesn't support "upsert" easily without a primary key constraint
                 # that includes user_id+symbol. For now, we append.
-                self.supabase.table("holdings").insert(record).execute()
-                return {"status": "success", "msg": "Added to Supabase"}
+                # Use upsert to handle re-adding/updating if primary key exists
+                self.supabase.table("holdings").upsert(record).execute()
+                return {"status": "success", "msg": "Added/Updated in Supabase"}
             except Exception as e:
                 logger.error(f"Supabase write error: {e}")
                 return {"status": "error", "msg": str(e)}
@@ -103,7 +111,7 @@ class PortfolioService:
                 # Check if symbol exists, if so, maybe update?
                 existing = next((item for item in data if item["symbol"] == symbol), None)
                 if existing:
-                    existing["shares"] = float(quantity)
+                    existing["shares"] = safe_shares
                     existing["cost_basis"] = float(cost_basis)
                     existing["updated_at"] = datetime.utcnow().isoformat()
                 else:
@@ -115,6 +123,10 @@ class PortfolioService:
             except Exception as e:
                 logger.error(f"Local file write error: {e}")
                 return {"status": "error", "msg": str(e)}
+
+    def update_stock(self, user_id, symbol, quantity, cost_basis):
+        """Update an existing stock in the portfolio."""
+        return self.add_stock(user_id, symbol, quantity, cost_basis)
 
     def remove_stock(self, user_id, symbol):
         """Remove a stock from the portfolio."""
@@ -173,19 +185,26 @@ class PortfolioService:
         try:
             # For A-Shares, fetch company name for better AI context
             prompt_symbol = symbol
+            # [Optimization] Disable name fetching for now to prevent system freeze due to proxy issues
+            # if symbol.isdigit():
+            #     try:
+            #         from data_fetcher import DataFetcher
+            #         fetcher = DataFetcher()
+            #         info = fetcher.get_stock_info(symbol)
+            #         if info and info.get('name') and info['name'] != symbol:
+            #             prompt_symbol = f"{symbol} (公司名: {info['name']})"
+            #     except Exception as e:
+            #         logger.warning(f"Failed to fetch company name for {symbol}: {e}")
+            
+            # Use specific context for A-Shares
             if symbol.isdigit():
-                try:
-                    from data_fetcher import DataFetcher
-                    fetcher = DataFetcher()
-                    info = fetcher.get_stock_info(symbol)
-                    if info and info.get('name') and info['name'] != symbol:
-                        prompt_symbol = f"{symbol} (公司名: {info['name']})"
-                except Exception as e:
-                    logger.warning(f"Failed to fetch company name for {symbol}: {e}")
+                prompt_text = f"请用一句话简明扼要地总结 A股代码为 {symbol} 的公司的主要业务和行业地位（不要废话，直接说重点）。"
+            else:
+                prompt_text = f"请用一句话简明扼要地总结股票代码为 {symbol} 的公司的主要业务和行业地位（不要废话，直接说重点）。"
 
             # Use the configured Gemini client
             response = self.gemini_client.generate_content(
-                f"请用一句话简明扼要地总结股票代码为 {prompt_symbol} 的公司的主要业务和行业地位（不要废话，直接说重点）。",
+                prompt_text,
                 safety_settings=[
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
                     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -202,3 +221,67 @@ class PortfolioService:
         except Exception as e:
             logger.error(f"Gemini Fetch Exception: {e}")
             return f"Network Error: {str(e)}"
+
+    def chat_with_gemini(self, symbol, message, history=[], selected_file_ids=[], model_name="gemini-2.5-flash"):
+        """Interactive chat about a specific stock with knowledge base support."""
+        if not self.gemini_key:
+            return "API Key Missing or Client Not Initialized"
+
+        try:
+            # Initialize specified model
+            # Note: genai.configure is global, so we just create the model instance
+            client = genai.GenerativeModel(model_name)
+
+            # Context preparation
+            stock_context = symbol
+            # [Optimization] Disable name fetching to prevent freeze
+            
+            market_context = "China A-Share" if symbol.isdigit() else "US Stock"
+
+            # Knowledge Base Context
+            knowledge_context = ""
+            if selected_file_ids:
+                try:
+                    ks = KnowledgeService()
+                    docs_text = ks.get_documents_content(selected_file_ids)
+                    if docs_text:
+                        knowledge_context = f"\n\n[USER UPLOADED KNOWLEDGE BASE]\n{docs_text}\n[END KNOWLEDGE BASE]\n"
+                except Exception as e:
+                    logger.error(f"Knowledge injection failed: {e}")
+
+            # System prompt to set behavior
+            system_instruction = f"You are a financial analysis assistant. You are discussing the {market_context} {stock_context}. Answer questions specifically about this company, its financials, news, or technicals. Keep answers concise and professional."
+            
+            # Start chat session
+            chat = client.start_chat(history=history)
+            
+            # Construct full message
+            if not history:
+                # First turn: System + Knowledge + Message
+                full_message = f"{system_instruction}{knowledge_context}\n\nUser Question: {message}"
+            else:
+                # Subsequent turns: Knowledge (if just added) + Message
+                # To be efficient, we usually attach knowledge only once or if changed. 
+                # For simplicity here, we append it to the current message if it's present, 
+                # assuming the user specifically selected it for THIS turn.
+                full_message = f"{knowledge_context}\n{message}" if knowledge_context else message
+
+            response = chat.send_message(
+                full_message,
+                safety_settings=[
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                ]
+            )
+            
+            if response and response.text:
+                return response.text.strip()
+            else:
+                return "AI No Response"
+
+        except Exception as e:
+            logger.error(f"Gemini Chat Exception: {e}")
+            return f"Error: {str(e)}"
+

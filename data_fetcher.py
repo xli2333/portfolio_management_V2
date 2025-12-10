@@ -23,11 +23,11 @@ DEFAULT_ADJUST = 'qfq'
 # ===========================================
 
 # Clean up any potential proxy environment variables to ensure direct connection
-# Removed NO_PROXY to allow user-defined proxies
-if 'HTTP_PROXY' in os.environ:
-    del os.environ['HTTP_PROXY']
-if 'HTTPS_PROXY' in os.environ:
-    del os.environ['HTTPS_PROXY']
+# (User requested to remove internal proxy manipulation. Relying on shell env.)
+# if 'HTTP_PROXY' in os.environ:
+#     del os.environ['HTTP_PROXY']
+# if 'HTTPS_PROXY' in os.environ:
+#     del os.environ['HTTPS_PROXY']
 
 # Random User Agents for "Mocking" IP behavior (though mostly for headers)
 USER_AGENTS = [
@@ -194,6 +194,8 @@ class DataFetcher:
                 if df is not None and not df.empty:
                     # 统一列名
                     # Handle both Eastmoney (Chinese) and Sina (English/mixed) columns
+                    # Sina usually returns: date, open, high, low, close, volume, amount (sometimes)
+                    # Eastmoney returns: 日期, 开盘, ...
                     rename_map = {
                         '日期': 'date', '股票代码': 'code', '开盘': 'open', '收盘': 'close', 
                         '最高': 'high', '最低': 'low', '成交量': 'volume', '成交额': 'amount', 
@@ -207,6 +209,14 @@ class DataFetcher:
                     for col in numeric_cols:
                         if col in df.columns:
                             df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                    # 补充缺失字段 (Sina 接口可能不返回涨跌幅)
+                    if 'change_pct' not in df.columns and 'close' in df.columns:
+                        df['change_pct'] = df['close'].pct_change() * 100
+                        df['change_pct'] = df['change_pct'].fillna(0) # 第一天为0
+
+                    if 'amount' not in df.columns and 'volume' in df.columns and 'close' in df.columns:
+                         df['amount'] = df['volume'] * df['close']
 
                     # 处理 A 股的周K/月K重采样 (Resampling) - 逻辑与美股一致
                     if period in ['weekly', 'monthly']:
@@ -270,23 +280,30 @@ class DataFetcher:
         if not symbol.isdigit():
              return {'code': symbol, 'name': symbol}
 
+        # [Optimization] Temporarily disable name fetching to prevent system freeze
         # A股: 尝试使用个股详情接口 (Method 1)
         # 这个接口只查询单只股票，速度快，不查全量列表
-        try:
-            df = ak.stock_individual_info_em(symbol=symbol)
-            # 返回的 DataFrame 通常有 item 和 value 两列
-            # 我们寻找 item 为 '股票简称' 的那一行
-            if df is not None and not df.empty:
-                # 过滤出股票简称
-                name_row = df[df['item'] == '股票简称']
-                if not name_row.empty:
-                    stock_name = name_row.iloc[0]['value']
-                    return {'code': symbol, 'name': stock_name}
-        except Exception as e:
-            print(f"[!] Name fetch error (Method 1): {e}")
-            # 出错时不崩溃，直接回退
+        # print(f"Fetching name for {symbol}...")
+        # try:
+        #     # akshare 接口内部可能有重试，如果网络不通可能会卡很久
+        #     # 这里我们做一个简单的保护，如果失败直接返回代码
+        #     df = ak.stock_individual_info_em(symbol=symbol)
+        #     
+        #     # 返回的 DataFrame 通常有 item 和 value 两列
+        #     # 我们寻找 item 为 '股票简称' 的那一行
+        #     if df is not None and not df.empty:
+        #         # 过滤出股票简称
+        #         name_row = df[df['item'] == '股票简称']
+        #         if not name_row.empty:
+        #             stock_name = name_row.iloc[0]['value']
+        #             return {'code': symbol, 'name': stock_name}
+        # except Exception as e:
+        #     print(f"[!] Name fetch error (Method 1): {e}")
+        #     # 出错时不崩溃，直接回退
 
         # Fallback: 如果获取失败，直接返回代码
+        # print(f"Name fetch failed, using symbol {symbol} as name.")
+        print(f"Skipping name fetch for {symbol} (Proxy mode).")
         return {'code': symbol, 'name': symbol}
 
     def get_usdcny_rate(self) -> float:
@@ -306,11 +323,11 @@ class DataFetcher:
         # Unified handling for both A-Shares and US-Stocks
         # Since the batch interface (ak.stock_zh_a_spot_em) is unstable under current proxy settings,
         # we switch to using the robust 'get_stock_data' method for all symbols.
-        for symbol in symbols:
+        for i, symbol in enumerate(symbols):
             try:
                 # 1. Fetch Price Data (Reuse the working get_stock_data logic)
-                # Fetching 5 days is enough to get the latest candle
-                df = self.get_stock_data(symbol, days=5, period='daily')
+                # Fetching 400 days to match Analyzer logic completely, ensuring consistency
+                df = self.get_stock_data(symbol, days=400, period='daily')
                 
                 if df is not None and not df.empty:
                     last_row = df.iloc[-1]
@@ -333,10 +350,15 @@ class DataFetcher:
                         'name': name
                     }
                 else:
+                    print(f"[!] Dashboard fetch failed for {symbol}: Data empty or None")
                     # Data empty
                     results[symbol] = {'price': 0, 'change_pct': 0, 'name': symbol}
             except Exception as e:
                 print(f"[!] Realtime fetch error ({symbol}): {e}")
                 results[symbol] = {'price': 0, 'change_pct': 0, 'name': symbol}
+            
+            # Add small delay between requests to avoid rate limiting
+            if i < len(symbols) - 1:
+                time.sleep(random.uniform(0.2, 0.5))
                 
         return results
