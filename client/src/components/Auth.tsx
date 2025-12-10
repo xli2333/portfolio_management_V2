@@ -40,14 +40,14 @@ export function Auth({ onLogin }: { onLogin: () => void }) {
     <div className="flex flex-col items-center justify-center min-h-[80vh] w-full max-w-md mx-auto animate-in fade-in duration-700">
       
       {/* Avant-Garde Header */}
-      <div className="w-full mb-16 relative">
-        <div className="absolute -left-4 -top-4 w-8 h-8 border-t-4 border-l-4 border-black"></div>
-        <h1 className="text-6xl font-black font-serif tracking-tighter leading-none mb-2">
+      <div className="w-full mb-20 relative">
+        <div className="absolute -left-6 -top-6 w-12 h-12 border-t-8 border-l-8 border-black"></div>
+        <h1 className="text-8xl font-black font-serif tracking-tighter leading-none mb-4">
           {isRegistering ? '加入' : '进入'}
           <br />
-          <span className="text-neon bg-black px-2">系统</span>
+          <span className="text-neon bg-black px-2 text-white">系统</span>
         </h1>
-        <p className="font-mono text-xs tracking-[0.3em] uppercase text-gray-400 pl-1">
+        <p className="font-mono text-sm tracking-[0.3em] uppercase text-gray-400 pl-1">
           System Access Protocol v2.5
         </p>
       </div>
@@ -96,13 +96,13 @@ export function Auth({ onLogin }: { onLogin: () => void }) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-black text-white font-mono text-sm py-6 hover:bg-neon hover:text-black transition-all duration-300 font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+          className="w-full bg-black text-white font-mono text-xl py-8 hover:bg-neon hover:text-black transition-all duration-300 font-bold tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
         >
           {loading ? (
-             <span className="animate-pulse">PROCESSING...</span>
+             <span className="animate-pulse">处理中...</span>
           ) : (
             <>
-              {isRegistering ? 'CREATE ACCOUNT' : 'AUTHENTICATE'}
+              {isRegistering ? '注册账户' : '登录系统'}
               <span className="group-hover:translate-x-1 transition-transform">→</span>
             </>
           )}
@@ -114,9 +114,9 @@ export function Auth({ onLogin }: { onLogin: () => void }) {
       <div className="mt-12 text-center">
         <button
           onClick={() => setIsRegistering(!isRegistering)}
-          className="font-mono text-xs text-gray-400 hover:text-black hover:underline decoration-neon decoration-2 underline-offset-4 transition-colors uppercase tracking-widest"
+          className="font-mono text-sm text-gray-400 hover:text-black hover:underline decoration-neon decoration-2 underline-offset-4 transition-colors uppercase tracking-widest"
         >
-          {isRegistering ? 'Existing User? Login' : 'New User? Create Account'}
+          {isRegistering ? '已有账号？立即登录' : '新用户？创建账户'}
         </button>
       </div>
 
