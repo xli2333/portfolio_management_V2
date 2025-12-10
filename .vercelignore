@@ -1,0 +1,11 @@
+output/
+__pycache__/
+.venv/
+venv/
+node_modules/
+.git/
+.DS_Store
+# Ignore all fonts in HarmonyOS Sans except the one we use
+HarmonyOS Sans/
+!HarmonyOS Sans/HarmonyOS_Sans_SC/
+!HarmonyOS Sans/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Regular.ttf

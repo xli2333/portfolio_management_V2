@@ -1,0 +1,119 @@
+{
+  "stock_info": {
+    "code": "603986",
+    "name": "兆易创新"
+  },
+  "analysis_time": "2025-11-17 16:40:19",
+  "price_info": {
+    "date": "2025-11-17",
+    "open": 207.81,
+    "close": 207.5,
+    "high": 214.74,
+    "low": 206.36,
+    "volume": 335061,
+    "amount": 7029315417.0,
+    "change": 1.7199999999999989,
+    "change_pct": 0.84
+  },
+  "key_indicators": {
+    "RSI_14": 47.175549580002105,
+    "K": 30.179466351958524,
+    "D": 32.55185326121353,
+    "J": 25.434692533448512,
+    "MACD": 2.8801636465778984,
+    "MACD_Signal": 6.680149051493574,
+    "ADX": 21.907547269448827,
+    "ATR": 14.4370220116147,
+    "CCI": -129.32929996020636,
+    "WILLR": -96.32870864461047
+  },
+  "ma_levels": {
+    "SMA_5": 213.45399999999987,
+    "SMA_10": 217.77599999999984,
+    "SMA_20": 222.45649999999986,
+    "SMA_60": 193.1096666666667,
+    "SMA_120": NaN,
+    "SMA_250": NaN
+  },
+  "patterns": {
+    "孕线": {
+      "type": "bullish",
+      "signal": 100,
+      "strength": "强"
+    },
+    "十字星": {
+      "type": "neutral",
+      "signal": 100,
+      "strength": "中性"
+    },
+    "纺锤线": {
+      "type": "neutral",
+      "signal": -100,
+      "strength": "中性"
+    },
+    "高浪线": {
+      "type": "neutral",
+      "signal": -100,
+      "strength": "中性"
+    }
+  },
+  "signals": {
+    "MACD": {
+      "signal": "sell",
+      "strength": 100,
+      "description": "死叉卖出 (MACD=2.8802)"
+    },
+    "RSI": {
+      "signal": "neutral",
+      "strength": 0,
+      "description": "中性 (RSI=47.2)"
+    },
+    "KDJ": {
+      "signal": "hold",
+      "strength": -30,
+      "description": "死叉观望 (K=30.2)"
+    },
+    "Bollinger": {
+      "signal": "neutral",
+      "strength": 0,
+      "description": "正常范围 (%B=17.9%)"
+    },
+    "MA": {
+      "signal": "neutral",
+      "strength": 0,
+      "description": "均线缠绕"
+    },
+    "Trend": {
+      "signal": "neutral",
+      "strength": 21,
+      "description": "中等趋势 (ADX=21.9)"
+    },
+    "WilliamsR": {
+      "signal": "buy",
+      "strength": 20,
+      "description": "超卖 (WR=-96.3)"
+    },
+    "CCI": {
+      "signal": "buy",
+      "strength": 14,
+      "description": "超卖 (CCI=-129.3)"
+    },
+    "Pattern": {
+      "signal": "buy",
+      "strength": 30,
+      "description": "看涨形态: 孕线"
+    },
+    "Volume": {
+      "signal": "neutral",
+      "strength": 0,
+      "description": "正常量能 (量比=0.8)"
+    }
+  },
+  "comprehensive_score": {
+    "score": -3.6,
+    "recommendation": "持有观望",
+    "buy_signals": 3,
+    "sell_signals": 1,
+    "neutral_signals": 6
+  }
+}

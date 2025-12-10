@@ -1,0 +1,37 @@
+==================================================
+  STOCK ANALYSIS REPORT: 普冉股份 (688766)
+  Date: 2025-11-19 11:16
+==================================================
+
+1. MARKET DATA
+   Price:  149.09
+   Change: -1.18%
+   Volume: 77,590
+   Trend:  TREND
+
+2. TECHNICAL SCORE
+   Total Score:    32.4 / 100
+   Recommendation: 买入
+   Buy Signals:    6
+   Sell Signals:   3
+
+3. KEY INDICATORS
+   RSI (14):    54.66
+   MACD:        10.789
+   KDJ (K/D/J): 36.8 / 45.1 / 20.1
+   SuperTrend:  124.11 (Dir: 1.0)
+   VWMA:        148.96
+
+4. ACTIVE SIGNALS
+   [↓ SELL] MACD            | Strength: 100 | 死叉卖出 (MACD=10.7887)
+   [↓ SELL] KDJ             | Strength: -30 | 死叉观望 (K=36.8)
+   [↑ BUY] MA              | Strength: 60 | 价格站上中长期均线
+   [↑ BUY] Trend           | Strength: 41 | 强势上涨趋势 (ADX=41.5)
+   [↓ SELL] Pattern         | Strength: 30 | 看跌形态: 三外下降
+   [↑ BUY] SuperTrend      | Strength: 100 | SuperTrend 上行
+   [↑ BUY] Ichimoku        | Strength: 100 | 一目多头云上方
+   [↓ SELL] PPO_TSI         | Strength: 75 | PPO & TSI 同步看空
+   [↑ BUY] KAMA            | Strength: 60 | KAMA 上行
+   [↑ BUY] ForceIndex      | Strength: 80 | 正向资金推动
+
+==================================================

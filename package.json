@@ -1,0 +1,11 @@
+{
+  "name": "stock-technical-analyzer-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix client && npm run build --prefix client"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

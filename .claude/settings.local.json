@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 3 bash:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout 4 bash:*)",
+      "Bash(timeout 2 bash:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(set HTTP_PROXY=)",
+      "Bash(set:*)",
+      "Bash(unset:*)",
+      "Bash(unset HTTP_PROXY:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout 60 python:*)",
+      "Bash(timeout 90 python:*)",
+      "Bash(export no_proxy=\"localhost,127.0.0.1\")",
+      "Bash(export no_proxy=\"*\":*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
