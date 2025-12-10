@@ -4,6 +4,7 @@ __pycache__/
 
 # Environment variables
 .env
+client/.env
 client/.env.local
 
 # Dependency directories
@@ -13,6 +14,16 @@ client/node_modules/
 portfolio.json
 company_summaries.json
 *.log
+
+# Knowledge base documents and reports
+knowledge_base/**/*.pdf
+test_report_*.pdf
+
+# Claude Code settings
+.claude/settings.local.json
+
+# Temporary files
+nul
 
 # Local run scripts (often OS-specific)
 run_local.bat

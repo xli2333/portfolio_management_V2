@@ -7,5 +7,32 @@
     "type": "user_upload",
     "file_size": 193442,
     "created_at": "2025-12-10T08:13:22.175192"
+  },
+  {
+    "id": "1ab8349b-bfc7-4a7c-b5a9-30fe448fbca7",
+    "symbol": "300308",
+    "filename": "DeepReport_20251210_173103.pdf",
+    "file_path": "knowledge_base\\300308\\1ab8349b-bfc7-4a7c-b5a9-30fe448fbca7_DeepReport_20251210_173103.pdf",
+    "type": "ai_report",
+    "file_size": 22760,
+    "created_at": "2025-12-10T09:31:03.461213"
+  },
+  {
+    "id": "c20a6b34-5724-4504-8f6b-5e72b0a22874",
+    "symbol": "NVDA",
+    "filename": "DeepReport_20251210_180354.pdf",
+    "file_path": "knowledge_base\\NVDA\\c20a6b34-5724-4504-8f6b-5e72b0a22874_DeepReport_20251210_180354.pdf",
+    "type": "ai_report",
+    "file_size": 119397,
+    "created_at": "2025-12-10T10:03:54.786532"
+  },
+  {
+    "id": "19b438e6-f286-4614-be12-b08ecc8d704a",
+    "symbol": "300308",
+    "filename": "DeepReport_20251210_183345.pdf",
+    "file_path": "knowledge_base\\300308\\19b438e6-f286-4614-be12-b08ecc8d704a_DeepReport_20251210_183345.pdf",
+    "type": "ai_report",
+    "file_size": 108287,
+    "created_at": "2025-12-10T10:33:45.712722"
   }
 ]

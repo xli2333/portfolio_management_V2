@@ -1,11 +1,14 @@
 import os
 import json
 import logging
+import base64
 # import requests # No longer needed
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
-import google.generativeai as genai # New import
+import google.generativeai as genai # Legacy SDK
+from google import genai as client_genai # New SDK
+from google.genai import types
 
 load_dotenv()
 
@@ -29,11 +32,14 @@ class PortfolioService:
             try:
                 genai.configure(api_key=self.gemini_key)
                 self.gemini_client = genai.GenerativeModel("gemini-2.5-pro") # Default instance
+                self.new_client = client_genai.Client(api_key=self.gemini_key) # New SDK Client
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini client: {e}")
                 self.gemini_client = None
+                self.new_client = None
         else:
             self.gemini_client = None
+            self.new_client = None
             
         if self.use_supabase:
             logger.info("Initializing PortfolioService with Supabase")
@@ -222,20 +228,14 @@ class PortfolioService:
             logger.error(f"Gemini Fetch Exception: {e}")
             return f"Network Error: {str(e)}"
 
-    def chat_with_gemini(self, symbol, message, history=[], selected_file_ids=[], model_name="gemini-2.5-flash"):
+    def chat_with_gemini(self, symbol, message, history=[], selected_file_ids=[], model_name="gemini-2.5-flash", image_data=None):
         """Interactive chat about a specific stock with knowledge base support."""
         if not self.gemini_key:
             return "API Key Missing or Client Not Initialized"
 
         try:
-            # Initialize specified model
-            # Note: genai.configure is global, so we just create the model instance
-            client = genai.GenerativeModel(model_name)
-
             # Context preparation
             stock_context = symbol
-            # [Optimization] Disable name fetching to prevent freeze
-            
             market_context = "China A-Share" if symbol.isdigit() else "US Stock"
 
             # Knowledge Base Context
@@ -252,18 +252,80 @@ class PortfolioService:
             # System prompt to set behavior
             system_instruction = f"You are a financial analysis assistant. You are discussing the {market_context} {stock_context}. Answer questions specifically about this company, its financials, news, or technicals. Keep answers concise and professional."
             
+            # --- IMAGE HANDLING (NEW SDK) ---
+            if image_data:
+                if not self.new_client:
+                    return "New Gemini Client initialization failed."
+                
+                try:
+                    # Decode Base64 Image
+                    # Remove header if present (e.g. "data:image/png;base64,...")
+                    if "," in image_data:
+                        image_data = image_data.split(",")[1]
+                    
+                    image_bytes = base64.b64decode(image_data)
+                    
+                    # Construct Content with Image
+                    # We treat this as a stateless call with history included in contents if possible,
+                    # or just a single-turn analysis if history is complex to map.
+                    # For simplicity and robustness with images, we'll do a generate_content call
+                    # with [System, History..., Current Message + Image]
+                    
+                    contents = []
+                    
+                    # Add System Instruction as first content? Or config?
+                    # New SDK supports system_instruction in config.
+                    
+                    # Convert History
+                    for msg in history:
+                        role = msg.get('role', 'user')
+                        text_parts = msg.get('parts', [])
+                        if isinstance(text_parts, list):
+                            text = " ".join(text_parts)
+                        else:
+                            text = str(text_parts)
+                        contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
+                    
+                    # Add Current Message + Image
+                    current_parts = []
+                    if knowledge_context:
+                        current_parts.append(types.Part.from_text(text=knowledge_context))
+                    
+                    if message:
+                        current_parts.append(types.Part.from_text(text=message))
+                    
+                    current_parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+                    
+                    contents.append(types.Content(role='user', parts=current_parts))
+                    
+                    config = types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.7
+                    )
+
+                    response = self.new_client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=config
+                    )
+                    
+                    return response.text if response.text else "AI analyzed the image but returned no text."
+
+                except Exception as img_e:
+                    logger.error(f"Image Analysis Failed: {img_e}")
+                    return f"Image Analysis Error: {str(img_e)}"
+
+            # --- TEXT ONLY HANDLING (LEGACY SDK) ---
+            # Initialize specified model
+            client = genai.GenerativeModel(model_name)
+            
             # Start chat session
             chat = client.start_chat(history=history)
             
             # Construct full message
             if not history:
-                # First turn: System + Knowledge + Message
                 full_message = f"{system_instruction}{knowledge_context}\n\nUser Question: {message}"
             else:
-                # Subsequent turns: Knowledge (if just added) + Message
-                # To be efficient, we usually attach knowledge only once or if changed. 
-                # For simplicity here, we append it to the current message if it's present, 
-                # assuming the user specifically selected it for THIS turn.
                 full_message = f"{knowledge_context}\n{message}" if knowledge_context else message
 
             response = chat.send_message(

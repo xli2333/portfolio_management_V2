@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, TrendingUp, Activity, PieChart as PieChartIcon, LayoutGrid, BrainCircuit } from 'lucide-react';
+import { Trash2, TrendingUp, Activity, PieChart as PieChartIcon, LayoutGrid, BrainCircuit, RefreshCw } from 'lucide-react';
 import { createChart, ColorType } from 'lightweight-charts';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { cn } from '@/lib/utils';
@@ -51,6 +51,8 @@ interface DashboardProps {
     onNavigate: (symbol: string) => void;
     onNavigateKnowledgeBase: (symbol: string) => void;
     userId: string;
+    initialTab?: 'portfolio' | 'advisor';
+    onTabChange?: (tab: 'portfolio' | 'advisor') => void;
 }
 
 function EditableCell({ 
@@ -264,13 +266,13 @@ function AnalyticsSection({ data, holdings }: { data: AnalysisData, holdings: Ho
     );
 }
 
-export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: DashboardProps) {
+export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId, initialTab = 'portfolio', onTabChange }: DashboardProps) {
     const [holdings, setHoldings] = useState<Holding[]>([]);
     const [overview, setOverview] = useState<PortfolioOverview | null>(null);
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [analysisLoading, setAnalysisLoading] = useState(false);
-    const [currentTab, setCurrentTab] = useState<'portfolio' | 'advisor'>('portfolio');
+    const [currentTab, setCurrentTab] = useState<'portfolio' | 'advisor'>(initialTab);
     
     const [showAddModal, setShowAddModal] = useState(false);
     
@@ -281,7 +283,12 @@ export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: Dashb
     const [addError, setAddError] = useState('');
     const [isAdding, setIsAdding] = useState(false);
 
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000'; 
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+    // Sync currentTab with initialTab when it changes
+    useEffect(() => {
+        setCurrentTab(initialTab);
+    }, [initialTab]);
 
     const fetchPortfolio = async () => {
         setLoading(true);
@@ -322,9 +329,10 @@ export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: Dashb
         }
     }
 
+    // Auto-fetch on first mount (page load/refresh), but not on view switches
     useEffect(() => {
         fetchPortfolio();
-    }, [userId]); // Refetch if user changes
+    }, []); // Empty dependency array = only runs once on mount
 
     const handleAddStock = async () => {
         if (!newSymbol || !newShares || !newCost) {
@@ -409,18 +417,24 @@ export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: Dashb
             {/* Top Bar / Tab Switcher */}
             <div className="flex justify-between items-center mb-8 border-b-2 border-gray-100 pb-2">
                 <div className="flex gap-8">
-                    <button 
-                        onClick={() => setCurrentTab('portfolio')}
-                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest", 
+                    <button
+                        onClick={() => {
+                            setCurrentTab('portfolio');
+                            onTabChange?.('portfolio');
+                        }}
+                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest",
                             currentTab === 'portfolio' ? "border-black text-black" : "border-transparent text-gray-400 hover:text-gray-600"
                         )}
                     >
                         <LayoutGrid size={18} />
                         资产管理
                     </button>
-                    <button 
-                        onClick={() => setCurrentTab('advisor')}
-                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest", 
+                    <button
+                        onClick={() => {
+                            setCurrentTab('advisor');
+                            onTabChange?.('advisor');
+                        }}
+                        className={cn("flex items-center gap-2 pb-4 border-b-4 transition-colors font-bold tracking-widest",
                             currentTab === 'advisor' ? "border-neon text-black" : "border-transparent text-gray-400 hover:text-gray-600"
                         )}
                     >
@@ -429,6 +443,15 @@ export function Dashboard({ onNavigate, onNavigateKnowledgeBase, userId }: Dashb
                         <span className="bg-black text-white text-[10px] px-1 py-0.5 rounded-sm">NEW</span>
                     </button>
                 </div>
+                <button
+                    onClick={fetchPortfolio}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 border-2 border-black bg-white hover:bg-black hover:text-white transition-all font-bold text-sm tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="刷新数据"
+                >
+                    <RefreshCw size={16} className={cn(loading && "animate-spin")} />
+                    刷新数据
+                </button>
             </div>
 
             {currentTab === 'advisor' ? (

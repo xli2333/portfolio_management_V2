@@ -137,6 +137,22 @@ class KnowledgeService:
             except Exception as e:
                 return []
 
+    def get_document_metadata(self, doc_id: str) -> dict:
+        """Retrieve document metadata by ID."""
+        if self.use_supabase:
+            try:
+                res = self.supabase.table("documents").select("*").eq("id", doc_id).single().execute()
+                return res.data
+            except Exception:
+                return None
+        else:
+            try:
+                with open(self.local_meta_file, 'r', encoding='utf-8') as f:
+                    docs = json.load(f)
+                return next((d for d in docs if d["id"] == doc_id), None)
+            except Exception:
+                return None
+
     def get_document_content(self, doc_id: str) -> str:
         """Retrieve full text content of a document by ID."""
         # 1. Find document metadata to get path

@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
-import { StockChat } from './StockChat';
+import { StockChat, StockChatRef } from './StockChat';
 
 // --- Types ---
 
@@ -161,10 +161,29 @@ function SignalGrid({ signals }: { signals: Record<string, Signal> }) {
     )
 }
 
-function StockChart({ ohlcv }: { ohlcv: AnalysisResult['ohlcv'] }) {
+interface StockChartProps {
+    ohlcv: AnalysisResult['ohlcv'];
+}
+
+export interface StockChartRef {
+    getScreenshot: () => string | null;
+}
+
+const StockChart = forwardRef<StockChartRef, StockChartProps>(({ ohlcv }, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    getScreenshot: () => {
+        if (!chartContainerRef.current) return null;
+        const canvas = chartContainerRef.current.querySelector('canvas');
+        if (canvas) {
+            return canvas.toDataURL('image/png');
+        }
+        return null;
+    }
+  }));
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -213,7 +232,7 @@ function StockChart({ ohlcv }: { ohlcv: AnalysisResult['ohlcv'] }) {
   }, [ohlcv]);
 
   return <div ref={chartContainerRef} className="w-full h-[400px] bg-white" />;
-}
+});
 
 // --- Analyzer App ---
 
@@ -229,7 +248,21 @@ export function Analyzer({ initialSymbol, onBack }: AnalyzerProps) {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState('');
   
+  const chartRef = useRef<StockChartRef>(null);
+  const stockChatRef = useRef<StockChatRef>(null);
+  
   const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000'; 
+
+  const handleAIAnalysis = () => {
+    if (chartRef.current && stockChatRef.current) {
+        const screenshot = chartRef.current.getScreenshot();
+        if (screenshot) {
+            stockChatRef.current.openWithContext("请分析这张图表的走势，给出关键技术位和操作建议。", screenshot);
+        } else {
+            alert("无法截取图表，请稍后重试");
+        }
+    }
+  };
 
   const fetchAnalysis = async (searchSymbol?: string) => {
     const s = searchSymbol || symbol;
@@ -394,11 +427,17 @@ export function Analyzer({ initialSymbol, onBack }: AnalyzerProps) {
                     <div className="flex justify-between items-end mb-4">
                         <h2 className="text-2xl font-black tracking-tight font-serif">价格走势 (PRICE ACTION)</h2>
                         <div className="flex items-center gap-4">
+                            <button 
+                                onClick={handleAIAnalysis}
+                                className="bg-neon text-black px-4 py-2 font-bold text-xs flex items-center gap-2 hover:bg-black hover:text-white transition-colors"
+                            >
+                                智能图表分析 (AI)
+                            </button>
                             <div className="text-xs font-mono text-gray-400">OHLCV / {period.toUpperCase()}</div>
                         </div>
                     </div>
                     <div className="border-4 border-black p-1 bg-white">
-                        <StockChart ohlcv={result.ohlcv} />
+                        <StockChart ref={chartRef} ohlcv={result.ohlcv} />
                     </div>
                 </div>
 
@@ -406,7 +445,7 @@ export function Analyzer({ initialSymbol, onBack }: AnalyzerProps) {
                 <SignalGrid signals={result.signals} />
 
                 {/* AI Chat Widget */}
-                <StockChat symbol={symbol} />
+                <StockChat ref={stockChatRef} symbol={symbol} />
 
             </main>
         ) : (

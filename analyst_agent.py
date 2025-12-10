@@ -1,7 +1,7 @@
 import os
 import logging
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,94 +11,144 @@ logger = logging.getLogger(__name__)
 class AnalystAgent:
     def __init__(self):
         self.api_key = os.environ.get("GEMINI_API_KEY")
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-        else:
+        if not self.api_key:
             logger.error("GEMINI_API_KEY not found for AnalystAgent")
+        else:
+            self.client = genai.Client(api_key=self.api_key)
+
+    def _run_research_task(self, symbol: str, role: str, focus_area: str, model_name: str = "gemini-2.5-flash") -> str:
+        """
+        Executes a specific research sub-task using Google Search.
+        Using Flash model for speed and efficiency in information gathering.
+        """
+        prompt = f"""
+You are a professional {role} analyzing {symbol}.
+Your goal is to gather FACTUAL information from the internet regarding: {focus_area}.
+
+Please perform a Google Search and summarize your findings in concise bullet points.
+Include numbers, dates, and sources where possible. Do not write a full essay, just key facts.
+"""
+        # Configure Search Tool
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
+        config = types.GenerateContentConfig(tools=[grounding_tool])
+
+        try:
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config
+            )
+            return response.text if response.text else f"[No data found by {role}]"
+        except Exception as e:
+            logger.warning(f"{role} failed: {e}")
+            return f"[Search Error for {role}: {e}]"
 
     def generate_deep_research_report(self, symbol: str, context_text: str = "", model_name: str = "gemini-2.5-pro") -> str:
         """
-        Conducts deep research using internal context + Google Search, and writes a report.
+        Multi-Agent Workflow:
+        1. 3 Sub-Agents gather info (Data, Industry, Corp).
+        2. Main Agent synthesizes everything into a report.
+        Returns: final_report_text
         """
         if not self.api_key:
             return "Error: API Key missing."
 
-        # 1. Initialize Model with Search Tool
-        # Note: 'gemini-2.5-pro' supports Google Search Grounding natively via 'tools'
-        tools = [
-            # Enable Google Search retrieval
-            {"google_search": {}} 
-        ]
-        
-        # Use a high-intelligence model for reasoning
-        model = genai.GenerativeModel(model_name, tools=tools)
+        logger.info(f"Starting Multi-Agent Research for {symbol}...")
 
-        # 2. Construct Prompt
-        # Handle Symbol Context (A-Share vs US)
+        # --- Phase 1: Distributed Research (Sub-Agents) ---
+        # 1. Data Analyst
+        data_research = self._run_research_task(
+            symbol, 
+            "Financial Data Analyst", 
+            "Latest financial reports (Revenue, Net Profit, Growth), PE/PB/PS ratios, Market Cap, Stock Price Performance (YTD/1Y), Dividend yield."
+        )
+        
+        # 2. Industry Analyst
+        industry_research = self._run_research_task(
+            symbol,
+            "Industry Researcher",
+            "Industry market size & CAGR, Supply chain position (Upstream/Downstream), Major Competitors & Market Share, Recent Industry Trends/Policies."
+        )
+
+        # 3. Corporate Analyst
+        corp_research = self._run_research_task(
+            symbol,
+            "Corporate Intelligence Specialist",
+            "Recent company news (last 6 months), Product launches, Management changes, Strategic partnerships, Legal disputes or Risks."
+        )
+
+        # Combine Raw Search Data
+        raw_search_content = f"""
+=== RESEARCH AGENT 1: FINANCIAL DATA ===
+{data_research}
+
+=== RESEARCH AGENT 2: INDUSTRY ANALYSIS ===
+{industry_research}
+
+=== RESEARCH AGENT 3: CORPORATE INTELLIGENCE ===
+{corp_research}
+"""
+
+        # --- Phase 2: Synthesis (Chief Editor) ---
         market_context = "China A-Share" if symbol.isdigit() else "US Stock"
         
-        prompt = f"""
-You are a Top Wall Street Investment Analyst (e.g., Goldman Sachs, Morgan Stanley level).
+        main_prompt = f"""
+You are a Top Wall Street Investment Analyst (Chief Editor).
 Your task is to write a comprehensive, professional investment research report for the {market_context} stock: {symbol}.
 
-### Inputs
-1. **Internal Knowledge Base**: I have attached some internal documents below. You MUST read and incorporate data/insights from them.
-2. **External Search**: You MUST use your Google Search tool to find the *latest* news, financial data (current price, PE ratio, recent earnings), and industry trends as of today ({os.environ.get('CURRENT_DATE', 'Now')}).
+**IMPORTANT: The entire report content MUST be written in Simplified Chinese (简体中文).**
+
+### Information Sources
+I have dispatched 3 field researchers to gather the latest data. You must synthesize their findings along with our internal knowledge base.
+
+#### 1. Fresh Field Research (Latest Internet Data):
+{raw_search_content}
+
+#### 2. Internal Knowledge Base (User Uploads):
+{context_text[:150000]}
+
+### Task
+Write a cohesive, deep-dive report. Do not just copy-paste the research; analyze it. Connect the dots between financial data, industry trends, and internal docs.
 
 ### Report Structure (Markdown)
-Please structure the report exactly as follows:
+Please structure the report exactly as follows (Titles in Chinese):
 
-# {symbol} Investment Research Report
-**Date:** [Today's Date]
-**Analyst:** AI Advisor (Gemini 2.5 Pro)
+# {symbol} 深度投资价值分析报告
+**日期:** {os.environ.get('CURRENT_DATE', 'Today')}
+**分析师:** AI Advisor ({model_name})
 
-## 1. Executive Summary (核心观点)
-- Bullish/Bearish/Neutral rating.
-- Key thesis in 3-5 bullet points.
+## 1. 核心观点 (Executive Summary)
+- 评级：(买入/持有/卖出)
+- 核心投资逻辑 (3-5点，使用列表)
 
-## 2. Company & Business Overview (基本面分析)
-- What they do.
-- Recent financial performance (Revenue, Net Profit trends).
-- *Merge insights from Internal Docs here if available.*
+## 2. 财务与估值分析 (Financial & Valuation Analysis)
+- 综合数据分析师的发现
+- 与历史表现或同业对比
 
-## 3. Industry Analysis (行业格局)
-- Competitors and market share.
-- Industry growth drivers (e.g., AI, EVs, etc.).
-- *Use Google Search to get the latest industry news.*
+## 3. 行业与竞争格局 (Industry & Competitive Landscape)
+- 行业分析师的洞察
+- {symbol} 的市场地位
 
-## 4. Valuation & Risks (估值与风险)
-- Current valuation metrics (PE, PS vs peers).
-- Key risks (Policy, Tech, Market).
+## 4. 经营动态与风险 (Operational Updates & Risks)
+- 公司新闻与内部资料结合
+- 新产品、管理层变动及主要风险
 
-## 5. Conclusion (结论)
-- Final verdict.
-
----
-### Internal Knowledge Base Context:
-{context_text[:100000]} 
-(Note: Context truncated if too long, prioritize the most relevant parts)
+## 5. 结论 (Conclusion)
+- 最终结论与展望
 """
-        # Note: Gemini 1.5/2.5 Pro has huge context (1M+ tokens), so simple truncation is just a safety measure for extreme edge cases, 
-        # but usually passing full text is fine. The simplified slicing above is just a placeholder.
 
+        # Main Agent Config (No search tool needed here, as we provided the search results in context)
+        # Using Pro model for reasoning
         try:
-            logger.info(f"Agent starting research for {symbol}...")
-            
-            response = model.generate_content(
-                prompt,
-                safety_settings={
-                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                }
+            logger.info(f"Chief Editor generating final report using {model_name}...")
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=main_prompt
             )
+            final_report = response.text if response.text else "Error: Chief Editor produced no text."
             
-            if response.text:
-                return response.text
-            else:
-                return "Error: Agent produced no text (Blocked or Empty)."
+            return final_report
 
         except Exception as e:
-            logger.error(f"Agent Research Failed: {e}")
+            logger.error(f"Chief Editor Failed: {e}")
             return f"Agent Error: {str(e)}"

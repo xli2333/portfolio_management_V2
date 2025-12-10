@@ -7,28 +7,30 @@ import { StockKnowledgeBase } from './components/StockKnowledgeBase';
 import { Auth } from './components/Auth';
 
 type View = 'dashboard' | 'analyzer' | 'knowledgeBase';
+type DashboardTab = 'portfolio' | 'advisor';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>('dashboard');
   const [selectedSymbol, setSelectedSymbol] = useState<string>('');
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('portfolio');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // DEV MODE: Bypass Auth
-    // supabase.auth.getSession().then(({ data: { session } }) => {
-    //   setSession(session);
-    //   setLoading(false);
-    // });
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
 
-    // const {
-    //   data: { subscription },
-    // } = supabase.auth.onAuthStateChange((_event, session) => {
-    //   setSession(session);
-    // });
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
 
-    // return () => subscription.unsubscribe();
-    setLoading(false); 
+    return () => subscription.unsubscribe();
   }, []);
 
   const navigateToAnalyzer = (symbol: string) => {
@@ -47,8 +49,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    // await supabase.auth.signOut();
-    window.location.reload();
+    await supabase.auth.signOut();
+    setSession(null);
   };
 
   if (loading) {
@@ -61,8 +63,14 @@ export default function App() {
     );
   }
 
-  // DEV MODE: Always render main app
-  // if (!session) { ... } 
+  // Show auth screen if not logged in
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-white text-black font-sans">
+        <Auth onLogin={() => {}} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white text-black font-sans selection:bg-neon selection:text-black">
@@ -83,35 +91,39 @@ export default function App() {
             </div>
             <div className="text-right">
                  <div className="text-xs font-bold font-serif tracking-widest mb-1">
-                    用户: DEV_USER
+                    用户: {session?.user?.email?.split('@')[0] || 'USER'}
                  </div>
                  <div className="flex items-center justify-end gap-4">
-                    <div className="text-xs font-mono text-neon-dim">● DEV MODE</div>
-                    <button 
+                    <div className="text-xs font-mono text-green-500">● ONLINE</div>
+                    <button
                         onClick={handleLogout}
                         className="text-xs font-mono font-bold text-gray-400 hover:text-red-500 underline decoration-2 underline-offset-2 transition-colors"
                     >
-                        RESET
+                        LOGOUT
                     </button>
                  </div>
             </div>
         </header>
 
-        {view === 'dashboard' ? (
-          <Dashboard 
-            onNavigate={navigateToAnalyzer} 
+        <div style={{ display: view === 'dashboard' ? 'block' : 'none' }}>
+          <Dashboard
+            onNavigate={navigateToAnalyzer}
             onNavigateKnowledgeBase={navigateToKnowledgeBase}
-            userId="test-user-id" 
+            userId={session?.user?.id || ''}
+            initialTab={dashboardTab}
+            onTabChange={setDashboardTab}
           />
-        ) : view === 'knowledgeBase' ? (
-          <StockKnowledgeBase 
-            symbol={selectedSymbol} 
-            onBack={navigateToDashboard} 
+        </div>
+        {view === 'knowledgeBase' && (
+          <StockKnowledgeBase
+            symbol={selectedSymbol}
+            onBack={navigateToDashboard}
           />
-        ) : (
-          <Analyzer 
-            initialSymbol={selectedSymbol} 
-            onBack={navigateToDashboard} 
+        )}
+        {view === 'analyzer' && (
+          <Analyzer
+            initialSymbol={selectedSymbol}
+            onBack={navigateToDashboard}
           />
         )}
 

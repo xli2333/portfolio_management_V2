@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Upload, FileText, Bot, Trash2, Send, Paperclip, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Bot, Trash2, Send, Paperclip, CheckSquare, Square, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 
@@ -73,6 +73,16 @@ export function StockKnowledgeBase({ symbol, onBack }: StockKnowledgeBaseProps) 
         if (!localStorage.getItem(EXPIRY_KEY)) {
              localStorage.setItem(EXPIRY_KEY, (now + oneDay).toString());
         }
+    };
+
+    const handleDownload = (docId: string, filename: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const link = document.createElement('a');
+        link.href = `${apiBase}/api/knowledge/download?doc_id=${docId}`;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const fetchDocuments = async () => {
@@ -189,9 +199,15 @@ export function StockKnowledgeBase({ symbol, onBack }: StockKnowledgeBaseProps) 
             const data = await res.json();
 
             // Replace loading message with success
+            let successText = `**深度研究报告已生成**\n\n已自动保存至左侧文档列表：\
+${data.file_record.filename}\
+`;
+            
+            successText += `\n\n您现在可以勾选这些报告并针对其内容进行提问。`;
+
             const successMsg: Message = { 
                 role: 'model', 
-                text: `**深度研究报告已生成**\n\n已自动保存至左侧文档列表：\`${data.file_record.filename}\`\n\n您现在可以勾选该报告并针对其内容进行提问。` 
+                text: successText
             };
             
             // Remove the last loading message and add success message
@@ -339,12 +355,22 @@ export function StockKnowledgeBase({ symbol, onBack }: StockKnowledgeBaseProps) 
                                                 <span>{new Date(doc.created_at).toLocaleDateString()}</span>
                                             </div>
                                         </div>
-                                        <button 
-                                            onClick={(e) => handleDelete(doc.id, e)}
-                                            className={cn("p-1 hover:text-red-500 transition-colors", isSelected ? "text-gray-600" : "text-gray-300")}
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        <div className="flex gap-1">
+                                            <button 
+                                                onClick={(e) => handleDownload(doc.id, doc.filename, e)}
+                                                className={cn("p-1 hover:text-black transition-colors", isSelected ? "text-gray-400 hover:text-white" : "text-gray-300")}
+                                                title="下载文档"
+                                            >
+                                                <Download size={14} />
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleDelete(doc.id, e)}
+                                                className={cn("p-1 hover:text-red-500 transition-colors", isSelected ? "text-gray-600" : "text-gray-300")}
+                                                title="删除文档"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -360,7 +386,7 @@ export function StockKnowledgeBase({ symbol, onBack }: StockKnowledgeBaseProps) 
                             <Bot size={20} className="text-black" />
                             <span className="font-bold font-serif text-sm">AI 分析师</span>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
                             {selectedMessageIndices.size > 0 && (
                                 <button 
                                     onClick={handleSaveChat}
@@ -369,8 +395,9 @@ export function StockKnowledgeBase({ symbol, onBack }: StockKnowledgeBaseProps) 
                                     <Paperclip size={12} /> 保存 ({selectedMessageIndices.size})
                                 </button>
                             )}
+
                             <button 
-                                onClick={handleGenerateReport}
+                                onClick={() => handleGenerateReport()}
                                 disabled={generatingReport}
                                 className={cn(
                                     "text-xs font-black uppercase tracking-wider px-3 py-1 transition-colors flex items-center gap-1",

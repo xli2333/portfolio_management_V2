@@ -74,6 +74,10 @@ def create_chat_pdf(symbol, messages) -> bytes:
     buffer.seek(0)
     return buffer.read()
 
+from reportlab.lib.colors import HexColor
+
+# ... (rest of imports)
+
 def create_markdown_pdf(symbol, markdown_text) -> bytes:
     """
     Generate a formatted PDF from Markdown text using Platypus.
@@ -87,8 +91,8 @@ def create_markdown_pdf(symbol, markdown_text) -> bytes:
     styles = getSampleStyleSheet()
     # Create Custom Styles with Chinese Font
     styles.add(ParagraphStyle(name='ChineseNormal', parent=styles['Normal'], fontName=font_to_use, fontSize=10, leading=14))
-    styles.add(ParagraphStyle(name='ChineseHeading1', parent=styles['Heading1'], fontName=font_to_use, fontSize=18, leading=22, spaceAfter=12))
-    styles.add(ParagraphStyle(name='ChineseHeading2', parent=styles['Heading2'], fontName=font_to_use, fontSize=14, leading=18, spaceBefore=12, spaceAfter=6))
+    styles.add(ParagraphStyle(name='ChineseHeading1', parent=styles['Heading1'], fontName=font_to_use, fontSize=18, leading=22, spaceAfter=12, textColor=HexColor('#0f172a')))
+    styles.add(ParagraphStyle(name='ChineseHeading2', parent=styles['Heading2'], fontName=font_to_use, fontSize=14, leading=18, spaceBefore=12, spaceAfter=6, textColor=HexColor('#334155')))
     
     story = []
     
@@ -105,22 +109,22 @@ def create_markdown_pdf(symbol, markdown_text) -> bytes:
             continue
             
         try:
+            # Clean Markdown formatting for cleaner PDF text
+            clean_line = line.replace('**', '') # Remove bold markers for simplicity
+            clean_line = clean_line.replace('__', '')
+            clean_line = clean_line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            
             if line.startswith('# '):
-                story.append(Paragraph(line[2:], styles['ChineseHeading1']))
+                story.append(Paragraph(clean_line[2:], styles['ChineseHeading1']))
             elif line.startswith('## '):
-                story.append(Paragraph(line[3:], styles['ChineseHeading2']))
+                story.append(Paragraph(clean_line[3:], styles['ChineseHeading2']))
             elif line.startswith('### '):
                 # Treat h3 as h2/bold for now
-                story.append(Paragraph(f"<b>{line[4:]}</b>", styles['ChineseNormal']))
+                story.append(Paragraph(f"<b>{clean_line[4:]}</b>", styles['ChineseNormal']))
             elif line.startswith('- ') or line.startswith('* '):
                 # List item
-                story.append(Paragraph(f"• {line[2:]}", styles['ChineseNormal']))
+                story.append(Paragraph(f"• {clean_line[2:]}", styles['ChineseNormal']))
             else:
-                # Normal text
-                # Simple sanitization for XML/HTML tags that might break reportlab
-                clean_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                # Restore bold tags if we want to support them roughly, or just ignore for stability
-                # For now, just render text safely
                 story.append(Paragraph(clean_line, styles['ChineseNormal']))
         except Exception as e:
             print(f"PDF Gen Error on line: {line} -> {e}")
@@ -129,8 +133,6 @@ def create_markdown_pdf(symbol, markdown_text) -> bytes:
         doc.build(story)
     except Exception as e:
         print(f"PDF Build Failed: {e}")
-        # Return empty PDF or error PDF?
-        # Let's try to return a simple error PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer)
         c.drawString(100, 700, "PDF Generation Failed. Please check logs.")

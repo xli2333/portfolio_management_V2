@@ -412,6 +412,25 @@ def list_documents():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/knowledge/download', methods=['GET'])
+def download_document():
+    doc_id = request.args.get('doc_id')
+    if not doc_id:
+        return jsonify({'error': 'Missing doc_id'}), 400
+    try:
+        # Get metadata to find path
+        doc = knowledge_service.get_document_metadata(doc_id)
+        if not doc or not os.path.exists(doc['file_path']):
+             return jsonify({'error': 'Document not found'}), 404
+             
+        return send_file(
+            doc['file_path'], 
+            as_attachment=True, 
+            download_name=doc['filename']
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/knowledge/delete', methods=['DELETE'])
 def delete_document():
     doc_id = request.args.get('doc_id')
@@ -464,23 +483,25 @@ def generate_agent_report():
         # 1. Get Context
         docs_text = knowledge_service.get_documents_content(selected_file_ids)
         
-        # 2. Run Agent
-        report_text = analyst_agent.generate_deep_research_report(symbol, docs_text, model)
+        # 2. Run Agent (Multi-Agent Workflow)
+        # Returns only the final report text now
+        report_text = analyst_agent.generate_deep_research_report(
+            symbol, docs_text, model
+        )
+        
         if report_text.startswith("Error") or report_text.startswith("Agent Error"):
              return jsonify({'error': report_text}), 500
              
-        # 3. Generate PDF
+        results = {'status': 'success', 'report_text': report_text}
+
+        # 3. Generate & Save Final Report PDF
         pdf_bytes = create_markdown_pdf(symbol, report_text)
-        
-        # 4. Save to Knowledge Base
         filename = f"DeepReport_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         save_result = knowledge_service.save_document(symbol, pdf_bytes, filename, doc_type='ai_report')
         
-        return jsonify({
-            'status': 'success',
-            'report_text': report_text,
-            'file_record': save_result
-        })
+        results['file_record'] = save_result
+        return jsonify(results)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -610,11 +631,12 @@ def chat():
         history = data.get('history') or []
         selected_file_ids = data.get('selected_file_ids') or []
         model = data.get('model') or 'gemini-2.5-flash'
+        image_data = data.get('image_data')  # Optional base64 image
         
-        if not symbol or not message:
-            return jsonify({'error': 'Missing symbol or message'}), 400
+        if not symbol or (not message and not image_data):
+            return jsonify({'error': 'Missing symbol or message/image'}), 400
             
-        reply = portfolio_service.chat_with_gemini(symbol, message, history, selected_file_ids, model)
+        reply = portfolio_service.chat_with_gemini(symbol, message, history, selected_file_ids, model, image_data)
         return jsonify({'reply': reply})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
